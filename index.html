@@ -564,6 +564,45 @@
   details.fold[open]{padding-bottom:2px}
   details.fold>*:not(summary){margin-left:10px;margin-right:10px}
 
+  /* 집중 프로젝트 진척 */
+  .card.proj{border-width:3px}
+  .card.proj.p-good{border-color:var(--teal)}
+  .card.proj.p-warn{border-color:#b8860b}
+  .card.proj.p-bad{border-color:var(--rust)}
+  .pbar{position:relative;height:18px;border:2px solid var(--ink);background:var(--panel2);margin:2px 0 8px}
+  .pbar span{display:block;height:100%;background:var(--blue)}
+  .p-good .pbar span{background:var(--teal)}
+  .p-warn .pbar span{background:#b8860b}
+  .p-bad .pbar span{background:var(--rust)}
+  .pbar i{position:absolute;top:-4px;bottom:-4px;width:3px;background:var(--ink)}
+  .prow{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13.5px;font-weight:700}
+  .prow b{font-size:18px;font-variant-numeric:tabular-nums}
+  .prow .ps{margin-left:auto;font-weight:800}
+  .p-good .prow .ps{color:var(--teal)} .p-warn .prow .ps{color:#8a6410} .p-bad .prow .ps{color:var(--rust)}
+
+  /* 이정표 — 짧게, 그러나 눈에 띄게 */
+  .mile{border:3px solid var(--teal);background:var(--teal-l);padding:11px 14px;margin:0 0 12px}
+  .mile .mt{font-family:var(--sans);font-weight:900;font-size:15px;color:var(--teal);margin-bottom:6px}
+  .mile .mwho{display:flex;align-items:center;gap:7px;font-weight:800;font-size:12.5px;margin-bottom:3px}
+  .mile .mwho img{width:26px;height:26px;image-rendering:pixelated;border:1.5px solid var(--ink)}
+  .mile .mwho .em{font-size:18px}
+  .mile p{margin:0 0 6px;font-size:14px}
+  .mile .mnext{font-size:12.5px;font-weight:800;color:var(--dim);border-top:1.5px dashed var(--teal);padding-top:5px}
+  .mrow{display:flex;gap:10px;align-items:baseline;padding:4px 0;border-bottom:1px dashed var(--line)}
+  .mrow i{font-style:normal;font-size:12px;color:var(--dim);font-weight:700;white-space:nowrap}
+  .mrow b{font-size:14px}
+  .card.grow .ordt tr.off td{opacity:.5}
+
+  /* 공장에 남은 선택의 흔적 */
+  .marks{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+  .mk{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;
+    padding:2px 8px;border:2px solid var(--ink);background:var(--panel2);white-space:nowrap}
+  .mk b{font-size:14px;font-weight:400}
+
+  /* 모션을 끌 수 있게. 중요한 정보는 정지 화면에서도 전부 읽힌다. */
+  @media(prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+  body.nomotion *{animation:none!important;transition:none!important}
+
   /* 결산 첫 화면 */
   .rhead{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin:2px 0 12px}
   .rbox{border:2px solid var(--ink);background:var(--panel2);padding:8px 11px}
@@ -2222,7 +2261,7 @@ DECK.life = [
     opts: [
       { label: '사무동 옆에 집을 지어준다', hint: '옮겨준다',
         fx: ['−통장 $2,000', '+직원 사기 7'],
-        apply: s => { s.cash -= 2_000; s.morale += 7;
+        apply: (s, g) => { s.cash -= 2_000; s.morale += 7; if (g && g.W) g.W.cat = true;
           return '단열재로 집을 지어가 옮겼심더. 인자 점심시간마다 거기 다 모입니더. '
                + '지도… 사료 한 포대 사다 놨심더. 아무도 못 본 걸로 합시더.'; } },
       { label: '그 열만 비워두고 놔둔다', hint: '알아서 나갈 때까지',
@@ -2397,6 +2436,9 @@ function initWorld(s, diff) {
     comp: 35,                     // 경쟁사 공격성 (숨김)
     deferMaint: 1, maintAge: 7, maintCool: 0,   // 이 턴이 지나야 정비 안건을 다시 올릴 수 있다
     negoTurn: {},                 // 고객별 마지막 단가 협상 턴
+    /* 집중 프로젝트와 이정표 */
+    project: null, projectLog: [], projBoost: {}, projCapHit: 1,
+    miles: [], newMiles: [],
     priceDir: 0, priceRumor: null, // 본사 가격 방향 (숨김) 과 그에 대한 소문
     policy: 'normal',
     hq: { target: 0, ytd: 0, commit: null, log: [] },
@@ -2562,7 +2604,7 @@ function runway(s) {
    매달 결산 직전 — 숨은 상태가 엔진의 캐파와 수율을 움직인다
    ============================================================ */
 function worldPre(s, W) {
-  let cap = W.capHit * (1 + (W.capBonus || 0));        // 고장·정비·인력 공백, 충원한 인력
+  let cap = W.capHit * (1 + (W.capBonus || 0)) * (W.projCapHit || 1);  // 고장·정비·인력 공백, 충원, 진행 중인 프로젝트
   if (W.equip < 60) cap *= 1 - (60 - W.equip) * 0.004;  // 잔고장
   s.mods = { capMult: cap, yieldAdj: (W.quality - 75) * 0.0005 };
 }
@@ -2676,6 +2718,10 @@ function worldPost(s, W, R, G) {
 
   // 12. 다음에 터질 일 — 확률은 지금까지의 선택이 만든다
   if ((G.mpt || 1) === 1 || s.turn % 3 === 0) rollIncidents(s, W, (G.mpt || 1) > 1 ? 1.8 : 1);
+
+  // 13. 집중 프로젝트 진척과 이정표
+  projectTick(s, W, R, G);
+  checkMilestones(s, W, R);
 }
 
 function rollIncidents(s, W, k = 1) {
@@ -2983,6 +3029,257 @@ function lineUtilOf(R) {
   const u = (x, y) => (y > 0 ? x / y : null);
   return { SLIT: u(r.SLIT || 0, c.SLIT), LEVEL: u(r.LEVEL || 0, c.LEVEL), BLANK: u((r.TRAP || 0) + (r.DIE || 0), c.BLANK) };
 }
+
+/* ============================================================
+   집중 프로젝트 — 분기마다 사장이 직접 고르는 한 가지.
+
+   안건은 회사가 올려주는 것이고, 이건 사장이 거는 것이다.
+   목표를 숫자로 걸고, 매달 진척이 보이고, 끝나는 달에 성공·부분·실패가 판가름 난다.
+   기존 시스템에 얹는다 — 영업은 effortQueue와 myShare, 품질은 W.quality,
+   재무는 매출채권·재고를 그대로 쓴다. 비슷한 걸 새로 만들지 않는다.
+
+   매 분기 같은 게 정답이 되지 않도록 셋 다 대가가 다르다.
+   영업은 돈, 품질은 이번 분기 캐파, 재무는 고객 관계를 내놓는다.
+   ============================================================ */
+const PROJECTS = {
+  newcust: {
+    name: '신규 고객 개척', who: 'jung', months: 6,
+    budget: 180_000,
+    cost: '예산 $180k · 영업이 여섯 달 붙습니다',
+    aim: '우리 시장 점유율 +9%',
+    /* 왜 지금인가 — 상태에서 점수를 매긴다. 높을수록 지금 할 만한 일이다. */
+    fit: (s, W) => {
+      const top = Math.max(...Object.keys(CUST).map(k => s.custShare[k] || 0));
+      return (top > 0.45 ? 2 : 0) + (s.myShare < 0.13 ? 2 : 0)
+           + ((W.utilHist.slice(-1)[0] ?? 0.8) < 0.85 ? 1 : 0);
+    },
+    why: (s, W) => {
+      const tk = topCust(s), top = s.custShare[tk] || 0;
+      return top > 0.45
+        ? `${cname(tk)} 하나가 우리 물량의 ${Math.round(top * 100)}%입니다. 거기가 기침하면 우리가 앓아눕습니다.`
+        : `점유율이 ${(s.myShare * 100).toFixed(1)}%입니다. 이 시장에서 이 크기로는 협상 테이블에서 목소리가 안 납니다.`;
+    },
+    base: s => s.myShare,
+    now: s => s.myShare,
+    goal: b => b * 1.09,
+    start: (s, W, G) => {
+      s.cash -= 180_000;
+      // 기존 영업 투자 큐를 그대로 쓴다. 매달 조금씩 효과가 도착한다.
+      for (let i = 0; i < 6; i++) s.effortQueue.push({ amount: 30_000, turnsLeft: CFG.SALES_EFFORT_LAG + i });
+    },
+    win: (s, W) => { s.myShare = Math.min(0.60, s.myShare * 1.04); W.projBoost.vol = (W.projBoost.vol || 0) + 6;
+      return '신규 거래처 두 곳을 뚫었습니다. 이런 건 여섯 달 붙어야 열립니다. 당분간 수주 얘기가 더 들어올 겁니다.'; },
+    half: (s, W) => { s.myShare = Math.min(0.60, s.myShare * 1.015); W.projBoost.vol = (W.projBoost.vol || 0) + 3;
+      return '한 곳은 뚫었고 한 곳은 내년을 보자고 합니다. 반쯤 된 겁니다. 반쯤 된 것도 된 겁니다.'; },
+    lose: (s, W) => { s.morale = wClamp(s.morale - 3);
+      return '여섯 달 돌았는데 계약서까지 간 데가 없습니다. 예산만 썼습니다. 제 책임입니다.'; },
+  },
+
+  quality: {
+    name: '품질·납기 개선', who: 'oh', months: 6,
+    budget: 120_000,
+    cost: '예산 $120k · 진행 중 캐파 3% 감소',
+    aim: '품질 지수 +6',
+    fit: (s, W) => (W.quality < 72 ? 2 : 0) + (W.stats.claims > 0 ? 1 : 0)
+           + (W.stats.shortages > 0 ? 1 : 0) + (W.equip < 60 ? 1 : 0),
+    why: (s, W) => W.quality < 72
+      ? `양품률이 ${qualityPct(W.quality)}%입니다. 이 수치로는 단가 협상에서 우리가 할 말이 없습니다.`
+      : `지금은 괜찮습니다. 괜찮을 때 올려놔야 나중에 협상 자료가 됩니다.`,
+    base: (s, W) => W.quality,
+    now: (s, W) => W.quality,
+    goal: b => Math.min(96, b + 6),
+    start: (s, W, G) => { s.cash -= 120_000; W.projCapHit = 0.97; },
+    /* 프로젝트는 매달 실제로 일한다. 표준작업서·검사공정이 품질 목표치를 끌어올리고,
+       품질은 그 목표치를 향해 천천히 따라간다(worldPost 3번).
+       다만 설비가 낡거나 현장이 지쳐 있으면 목표치 자체가 안 올라간다 —
+       그래서 같은 프로젝트라도 회사 상태에 따라 되기도 하고 안 되기도 한다. */
+    tick: (s, W) => { W.qBoost = Math.max(W.qBoost, 12); W.projCapHit = 0.97; },
+    win: (s, W) => { W.qBoost += 6; W.projBoost.qual = (W.projBoost.qual || 0) + 6; s.morale = wClamp(s.morale + 4);
+      return '표준작업서를 다시 쓰고 검사 공정을 하나 넣었습니다. 불량률이 눈에 띄게 내려갔습니다. 이제 고객사에 들고 갈 자료가 생겼습니다.'; },
+    half: (s, W) => { W.qBoost += 3; W.projBoost.qual = (W.projBoost.qual || 0) + 2;
+      return '절반쯤 왔습니다. 표준은 만들었는데 현장에 붙는 데 시간이 더 걸립니다.'; },
+    lose: (s, W) => '서류는 늘었는데 숫자는 그대로입니다. 이런 건 위에서 밀면 안 되는 일이었습니다.',
+  },
+
+  cash: {
+    name: '채권 회수·재고 정상화', who: 'han', months: 3,
+    budget: 60_000,
+    cost: '예산 $60k · 대금 독촉으로 고객 관계 하락',
+    aim: '순운전자본 −12%',
+    fit: (s, W) => (runway(s) < 2.2 ? 2 : 0) + (coverOf(s) > COVER.heavy ? 2 : 0)
+           + (s.debt.limit > 0 && s.debt.principal / s.debt.limit > 0.7 ? 1 : 0),
+    why: (s, W) => coverOf(s) > COVER.heavy
+      ? `재고율이 ${coverOf(s).toFixed(1)}개월입니다. 창고에 돈이 서 있습니다.`
+      : `현금과 한도를 다 합쳐 ${runway(s).toFixed(1)}개월치입니다. 이건 경영이 아니라 외줄타기입니다.`,
+    base: s => nwcOf(s),
+    now: s => nwcOf(s),
+    goal: b => b * 0.88,
+    lower: true,                                  // 낮아져야 성공하는 목표
+    start: (s, W, G) => {
+      s.cash -= 60_000;
+      for (const k in CUST) W.rel[k] = wClamp(W.rel[k] - 3);
+    },
+    /* 매달 채권을 조금씩 당겨 받는다. 수수료를 물고 현금을 사는 것이라 이익은 줄고 통장은 는다.
+       그런데 그 사이에 재고를 잔뜩 쌓으면 순운전자본은 그대로다 —
+       채권을 걷는 것과 재고를 줄이는 것, 둘 다 해야 목표가 맞는다. */
+    tick: (s, W) => {
+      const ar = s.ar.reduce((a, x) => a + x.amount, 0);
+      let target = ar * 0.11, got = 0;
+      for (const a of s.ar.slice().sort((x, y) => x.dueTurn - y.dueTurn)) {
+        if (got >= target) break;
+        const take = Math.min(a.amount, target - got);
+        got += take; a.amount -= take;
+      }
+      s.ar = s.ar.filter(a => a.amount > 1e-6);
+      s.cash += got * 0.985;
+    },
+    win: (s, W) => {
+      // 묵은 현물을 털고 채권을 당겨 받는다. 실제로 장부를 움직인다.
+      let got = 0;
+      for (const l of s.invRaw) {
+        const age = s.turn - l.arrivalTurn;
+        if (age < CFG.DUMP_AGE_TURNS || l.qty <= 0) continue;
+        got += l.qty * l.unitCost * 0.7; l.qty = 0;
+      }
+      s.invRaw = s.invRaw.filter(l => l.qty > 1e-6);
+      s.cash += got;
+      W.projBoost.credit = (W.projBoost.credit || 0) + 1;
+      return got > 1000
+        ? `묵은 현물을 털고 밀린 채권을 걷었습니다. 통장에 $${money1k(got)} 들어왔습니다. 장부는 조금 아프고 통장은 숨을 쉽니다.`
+        : '채권을 다 걷었습니다. 털 재고가 없어서 현금 유입은 크지 않은데, 운전자본은 확실히 줄었습니다.';
+    },
+    half: (s, W) => '절반쯤 줄였습니다. 큰 데 한 곳이 끝까지 안 줬습니다. 그건 다음 분기 숙제입니다.',
+    lose: (s, W) => '숫자가 안 줄었습니다. 재고는 안 팔리고 채권은 안 들어왔습니다. 독촉만 하고 관계만 상했습니다.',
+  },
+};
+
+/* 순운전자본 — 재무 프로젝트의 측정 기준. 결산표가 쓰는 정의와 같아야 한다. */
+function nwcOf(s) {
+  const ar = s.ar.reduce((a, x) => a + x.amount, 0);
+  const inv = s.invRaw.reduce((a, l) => a + l.qty * l.unitCost, 0)
+            + s.invFg.reduce((a, l) => a + l.qty * (l.unitCost || 0), 0);
+  const ap = (s.ap || []).reduce((a, x) => a + (x.amount || 0), 0);
+  return ar + inv - ap;
+}
+
+/* 지금 상태에서 어느 프로젝트가 말이 되는지 점수 순으로 돌려준다.
+   점수가 곧 "왜 지금인가"의 근거다. 매 분기 같은 게 1등이 되지 않도록
+   방금 한 것은 점수를 깎는다. */
+function projectOptions(s, W) {
+  return Object.entries(PROJECTS).map(([key, p]) => {
+    const recent = (W.projectLog || []).filter(x => x.key === key).slice(-1)[0];
+    const penalty = recent ? Math.max(0, 3 - (s.turn - recent.end)) : 0;
+    return { key, p, score: p.fit(s, W) - penalty, why: p.why(s, W) };
+  }).sort((a, b) => b.score - a.score);
+}
+
+function startProject(s, W, G, key) {
+  const p = PROJECTS[key];
+  const base = p.base(s, W);
+  W.project = {
+    key, start: s.turn, end: s.turn + p.months,
+    base, goal: p.goal(base), lower: !!p.lower, progress: 0,
+  };
+  p.start(s, W, G);
+  remember(W, s, 'project', `집중 프로젝트 · ${p.name}`);
+  return W.project;
+}
+
+/* 지금 몇 퍼센트 왔나. 0~1로 자른다. 낮아져야 하는 목표는 방향을 뒤집는다. */
+function projectProgress(s, W) {
+  const pr = W.project; if (!pr) return 0;
+  const p = PROJECTS[pr.key];
+  const now = p.now(s, W);
+  const span = pr.goal - pr.base;
+  if (Math.abs(span) < 1e-9) return 1;
+  return Math.max(0, Math.min(1, (now - pr.base) / span));
+}
+
+/* 매달 굴린다. 끝나는 달에 성공·부분·실패를 가른다. */
+function projectTick(s, W, R, G) {
+  W.projBoost = W.projBoost || {};
+  const pr = W.project;
+  if (!pr) { W.projCapHit = 1; return; }
+  if (PROJECTS[pr.key].tick) PROJECTS[pr.key].tick(s, W);
+  pr.progress = projectProgress(s, W);
+  if (s.turn < pr.end) return;
+
+  const p = PROJECTS[pr.key];
+  const pct = pr.progress;
+  const grade = pct >= 1 ? 'win' : pct >= 0.55 ? 'half' : 'lose';
+  const msg = p[grade](s, W);
+  W.projCapHit = 1;
+  W.projectLog = W.projectLog || [];
+  W.projectLog.push({ key: pr.key, name: p.name, start: pr.start, end: pr.end, pct, grade });
+  fire(W, s, 'project',
+    `집중 프로젝트 「${p.name}」 ${grade === 'win' ? '목표 달성' : grade === 'half' ? '부분 달성' : '미달'} — `
+    + `${p.aim} 대비 ${Math.round(pct * 100)}%. ${msg}`,
+    `${dateLabel(pr.start)}에 건 프로젝트`,
+    { turn: pr.start, date: dateLabel(pr.start), label: `집중 프로젝트 · ${p.name}`,
+      gap: p.months, ago: ago(p.months) });
+  if (grade === 'win') milestone(W, s, 'proj-win', `첫 집중 프로젝트 성공 — ${p.name}`, p.who,
+    '목표를 숫자로 걸고 여섯 달을 버텨서 그 숫자를 만들었습니다.', '다음 분기에 또 하나 걸어보시죠.');
+  W.project = null;
+}
+
+/* ============================================================
+   이정표 — 이겼다는 걸 알려주지 않으면 이긴 줄 모른다.
+
+   보너스를 주는 장치가 아니다. 내 선택이 실제 지표를 움직였다는 걸
+   그 자리에서 이름 붙여주는 장치다. 한 번 달성한 것은 다시 안 뜬다.
+   ============================================================ */
+function milestone(W, s, key, title, who, msg, next) {
+  W.miles = W.miles || [];
+  if (W.miles.some(m => m.key === key)) return false;
+  W.miles.push({ key, turn: s.turn, date: dateLabel(s.turn), title, who, msg, next });
+  W.newMiles = W.newMiles || [];
+  W.newMiles.push(W.miles[W.miles.length - 1]);
+  return true;
+}
+
+function checkMilestones(s, W, R) {
+  const h = s.history;
+  if (R.op > 0) milestone(W, s, 'first-op', '첫 흑자', 'han',
+    `${money(R.op)}. 작은 숫자인데, 부호가 바뀐 겁니다. 이 회사에서 부호가 바뀌는 건 처음입니다.`,
+    '다음은 누계를 흑자로 돌리는 겁니다.');
+  if (s.cum.op > 0) milestone(W, s, 'cum-op', '누계 영업이익 흑자 전환', 'han',
+    `부임 이후 합계가 ${money(s.cum.op)}입니다. 그동안 판 게 이제 남기 시작했습니다.`,
+    '여기서부터는 지키는 싸움입니다.');
+
+  // 재고 정상화 — 석 달 연속 적정 구간
+  const cov = W.coverHist.slice(-3);
+  if (cov.length === 3 && cov.every(c => c >= COVER.warn && c <= COVER.ok))
+    milestone(W, s, 'stock-ok', '재고 정상화', 'jung',
+      `석 달 연속 재고율 ${COVER.warn}~${COVER.ok}개월. 결품도 없고 창고도 안 넘칩니다.`,
+      '이 상태를 유지하는 게 제일 어렵습니다.');
+
+  // 납기 — 석 달 연속 100%
+  const last3 = h.slice(-3);
+  if (last3.length === 3 && last3.every(r => (r.shortRatio ?? 1) >= 0.999))
+    milestone(W, s, 'ontime', '납기 석 달 연속 완납', 'oh',
+      '석 달 동안 한 고객도 못 채운 적이 없습니다. 이건 운이 아니라 관리입니다.',
+      '단가 협상에서 이 기록을 쓰십시오.');
+
+  if (W.quality >= 88) milestone(W, s, 'qual-high', '품질 우수 수준 진입', 'oh',
+    `양품률 ${qualityPct(W.quality)}%. 고객사 감사에서 지적 나올 일이 거의 없습니다.`,
+    '협상에서 「품질로 설득」이 잘 먹힙니다.');
+
+  if (W.solar) milestone(W, s, 'solar', '태양광 가동', 'seo',
+    '지붕이 전기를 만들기 시작했습니다. 고지서가 처음으로 줄었어요.',
+    '아낀 돈은 매달 자동으로 들어옵니다.');
+
+  if ((s.lines || []).length > 2) milestone(W, s, 'expand', '설비 증설 가동', 'gu',
+    '새 라인이 돕니다. 이제 받을 수 있는 물량이 늘었심더.',
+    '늘어난 캐파만큼 소재도 더 걸어야 합니다.');
+
+  if (s.turn >= 12 && W.stats.breakdowns === 0) milestone(W, s, 'no-break', '1년 무고장', 'gu',
+    '1년 동안 라인이 한 번도 안 섰심더. 정비를 제때 한 값입니더.',
+    '이건 자랑해도 됩니더.');
+
+  if (s.trust >= 80) milestone(W, s, 'trust', '본사 신뢰 80 돌파', 'jung',
+    `본사 신뢰 ${Math.round(s.trust)}. 이제 본사가 먼저 물어봅니다.`,
+    '한도 협의도 수월해집니다.');
+}
 </script>
 <script>
 /* ============================================================
@@ -3092,6 +3389,11 @@ function worldIssues(s, W, G) {
   if (s.turn > 14 && !G.seen['h-tax'] && wChance(0.05)) add(taxCard(s, W), 74);
   if ((W.mem.some(m => m.tag === 'quit' && s.turn - m.turn <= 2) || (s.morale < 50 && wChance(0.15)))
       && since('h-hire') > 10) add(vacancyCard(s, W), 60);
+
+  /* ---------- 이번 분기 집중 프로젝트 ----------
+     분기에 하나. 진행 중이면 안 묻는다 — 벌인 일을 끝내기 전에 또 벌이지 않는다. */
+  if (!W.project && (G.mpt > 1 || month % 3 === 0) && since('proj-pick') >= 2)
+    add(projectPickCard(s, W), 86, true);
 
   /* ---------- 반기 영업 계획 ----------
      "어디에 힘을 쏟을까요"를 매달 물으면 그건 계획이 아니라 잡담이다.
@@ -3461,10 +3763,44 @@ function negoCard(s, W, k, L) {
      "물량은 빨리 느는데 협상이 터프해서 안 받아주면 늘려놓은 걸 뺏긴다"가 이 숫자다. */
   const hold = c.holdLoss ?? 0.22;
 
+  /* 지난 협상에서 내가 뭘 했는지 이 자리에 그대로 들고 온다.
+     양보했으면 또 와서 더 부르고, 버텼으면 이번엔 물량을 걸고 오고,
+     올려 받았으면 이번엔 그걸 되돌리러 온다.
+     "직전 결과 → 이번 요구 이유 → 새 대응"이 이어져야 협상이 대화가 된다. */
+  const LAST = { concede: '양보', 'hold-ok': '동결(버팀)', hold: '동결(이탈)',
+                 raise: '인상 관철', 'raise-fail': '인상 실패', persuade: '품질로 설득',
+                 renege: '약속 파기', tempcut: '한시 인하' };
+  const prevMem = (W.mem || []).filter(m => m.cust === k && LAST[m.tag]).slice(-1)[0];
+  const prev = prevMem ? { tag: prevMem.tag, label: LAST[prevMem.tag], turn: prevMem.turn,
+                           ago: s.turn - prevMem.turn } : null;
+  const history = !prev ? '' :
+      prev.tag === 'concede'
+        ? `지난번에 열어드렸죠. ${prev.ago}개월 만에 또 왔습니다. "그때 되니까 이번에도 되겠지" — 그 얼굴입니다.`
+    : prev.tag === 'hold-ok'
+        ? `지난번엔 우리가 버텼고 그쪽이 물러섰습니다. 이번엔 경쟁사 얘기 대신 물량을 걸고 왔습니다.`
+    : prev.tag === 'hold'
+        ? `지난번에 동결했다가 물량을 뺏겼습니다. 그쪽은 그걸 압니다. 이번엔 더 세게 나옵니다.`
+    : prev.tag === 'raise'
+        ? `지난번에 우리가 올려 받았습니다. 그쪽 구매팀장이 그때 얘기를 꺼내더군요. 이번엔 되돌리러 왔습니다.`
+    : prev.tag === 'raise-fail'
+        ? `지난번에 올려달라 했다가 못 받았습니다. 그쪽은 우리가 아쉬운 걸 압니다.`
+    : prev.tag === 'persuade'
+        ? `지난번엔 품질 자료로 동결시켰습니다. 이번엔 "그 자료 이번에도 있냐"고 먼저 묻더군요.`
+    : prev.tag === 'renege'
+        ? `지난번에 약속을 뒤집은 건이 아직 안 풀렸습니다. 이번 자리 분위기가 좋지 않습니다.`
+    : `지난번엔 한시 인하로 급한 불만 껐습니다. 그 기한이 끝난 걸 그쪽도 압니다.`;
+  /* 직전 결과가 이번 요구의 크기를 움직인다 */
+  const memAsk = !prev ? 0
+    : prev.tag === 'concede' ? 1
+    : prev.tag === 'hold' ? 1
+    : prev.tag === 'raise' ? 1
+    : prev.tag === 'hold-ok' ? -1
+    : prev.tag === 'persuade' ? -1 : 0;
+
   /* 고객이 부르는 값 — 시황·경쟁·의존도, 그리고 그 고객군이 원래 얼마나 세게 부르는지(askAdd)가 정한다.
      가공마진이 톤당 $40인 장사라 여기서 $6을 내주면 그 고객 마진의 15%가 한 번에 날아간다. */
   const ask = Math.max(pledged, Math.max(0, Math.min(9,
-    2 + (c.askAdd || 0)
+    2 + (c.askAdd || 0) + memAsk
     + (I.slack ? 2 : 0) + (I.threat ? 2 : 0) + (I.comp > 50 ? 1 : 0) + (I.dep ? 1 : 0) - (I.tight ? 2 : 0))));
   /* 우리가 올려 부를 수 있는 값 */
   const up = Math.max(2, Math.min(6, 2 + (I.tight ? 2 : 0) + (I.pmUp ? 1 : 0) + (I.cut >= 6 ? 1 : 0)));
@@ -3481,6 +3817,7 @@ function negoCard(s, W, k, L) {
 
   /* 정 부장이 들고 온 정보. 하나하나가 위 숫자의 근거다. */
   const intel = [
+    history,
     pledged ? `그리고 이건 먼저 말씀드려야겠습니다 — 지난번에 사장님이 이번 협상에서 열어주시겠다고 하셨습니다. `
             + `그쪽 구매팀장이 그때 적어둔 수첩을 그대로 펴놓고 앉아 있습니다.` : '',
     I.threat
@@ -3631,6 +3968,9 @@ function negoCard(s, W, k, L) {
     { kind: 'est', label: `${c.name} 물량 전망`, value: I.outlook === 'up' ? '증가' : I.outlook === 'down' ? '정체' : '보합',
       note: I.outlook === 'down' ? '단가를 내줘도 물량은 안 따라옵니다' : null },
     pledged ? { kind: 'fact', label: '지난 약속', value: `−$${pledged}/t 열어주기로 함`, warn: true } : null,
+    prev ? { kind: 'fact', label: '지난 협상 결과', value: `${prev.label} · ${prev.ago}개월 전`,
+      note: memAsk > 0 ? '그래서 이번엔 더 세게 부릅니다' : memAsk < 0 ? '그래서 이번엔 조심스럽게 나옵니다' : null,
+      warn: memAsk > 0 } : { kind: 'fact', label: '지난 협상 결과', value: '이 고객과는 처음입니다' },
   ];
 
   return {
@@ -3727,6 +4067,58 @@ function spotBetCard(s, W, L) {
       mk(0.5, `절반 ${fmt(Math.round(qty * 0.5))}톤만 받는다`, '반만 건다'),
       mk(0, '받지 않는다', '창고에 안 눕히는 것도 실력'),
     ],
+  };
+}
+
+/* ============================================================
+   이번 분기 집중 프로젝트 — 안건은 회사가 올리고, 이건 사장이 건다.
+
+   목표를 숫자로 걸고 매달 진척이 보이고, 끝나는 달에 성공·부분·실패가 판가름 난다.
+   셋 다 대가가 다르다 — 영업은 돈, 품질은 이번 분기 캐파, 재무는 고객 관계.
+   그래서 매 분기 같은 게 정답이 되지 않는다.
+   ============================================================ */
+function projectPickCard(s, W) {
+  const opts = projectOptions(s, W);
+  const done = (W.projectLog || []).length;
+  const ctx = [
+    { kind: 'fact', label: '지금 제일 급한 것', value: PROJECTS[opts[0].key].name,
+      note: opts[0].why },
+    { kind: 'fact', label: '자금 여력', value: `${runway(s).toFixed(1)}개월치`, warn: runway(s) < 2 },
+    { kind: 'fact', label: '재고율 · 품질 · 점유율',
+      value: `${coverOf(s).toFixed(1)}개월 · ${qualityPct(W.quality)}% · ${(s.myShare * 100).toFixed(1)}%` },
+    done ? { kind: 'fact', label: '지난 프로젝트',
+      value: (W.projectLog.slice(-1)[0].grade === 'win' ? '목표 달성' : W.projectLog.slice(-1)[0].grade === 'half' ? '부분 달성' : '미달')
+        + ` (${W.projectLog.slice(-1)[0].name})` } : null,
+  ];
+  return {
+    id: 'proj-pick', who: 'han', topic: 'proj', ctx,
+    title: '이번 분기에 뭘 붙잡고 갈까요',
+    text: `사장님, 분기 하나에 하나씩만 제대로 하시죠. 세 가지를 동시에 하면 세 가지 다 안 됩니다. `
+        + `${done ? `지금까지 ${done}건 했고요. ` : '부임하고 처음 거는 겁니다. '}`
+        + `목표는 숫자로 걸겠습니다. 끝나는 달에 됐는지 안 됐는지 제가 그대로 보고드리겠습니다. `
+        + `안 하셔도 됩니다. 그것도 결정입니다.`,
+    opts: opts.map(({ key, p, why, score }) => ({
+      label: p.name,
+      hint: score >= 3 ? '지금 이게 제일 급합니다' : score >= 1 ? '해둘 만합니다' : '지금은 급하지 않습니다',
+      fx: [`−${p.cost}`, `+목표 ${p.aim}`, `?${p.months}개월 뒤 판가름`,
+           score < 1 ? '?지금 상태에선 효과가 작습니다' : null].filter(Boolean),
+      apply: (st, G) => {
+        const pr = startProject(st, W, G, key);
+        styleAdd(W, key === 'newcust' ? 'grow' : key === 'quality' ? 'craft' : 'cash', 2);
+        lever(G, `집중 프로젝트 · ${p.name}`, { cash: -p.budget,
+          risk: `${dateLabel(pr.end)}에 ${p.aim} 달성 여부가 판가름 납니다` });
+        return `${p.name}으로 걸었습니다. ${why} `
+             + `목표는 ${p.aim}이고, ${dateLabel(pr.end)}에 결과 보고드리겠습니다. `
+             + `진척은 매달 첫 화면에 띄워두겠습니다.`;
+      },
+    })).concat([{
+      label: '이번 분기는 걸지 않는다', hint: '벌여둔 일부터 정리한다',
+      fx: ['+예산·인력 아낌', '−아무것도 나아지지 않습니다'],
+      apply: (st, G) => {
+        lever(G, '집중 프로젝트 보류', { risk: '이번 분기에 개선되는 지표 없음' });
+        return '알겠습니다. 이번 분기는 있는 걸로 버티는 겁니다. 그것도 한 방법입니다.';
+      },
+    }]),
   };
 }
 
@@ -5133,6 +5525,18 @@ function openDecisions() {
    확인 / 추정 / 소문을 구분해서 붙인다. 숨겨진 미래 난수는 올리지 않는다 —
    지금 사장이 알 수 있는 것만 올린다.
    ============================================================ */
+/* 움직임 끄기. 이 게임의 중요한 정보는 전부 정지 화면의 글자와 숫자로 전달된다 —
+   애니메이션은 장식이고, 끄고 싶은 사람은 끌 수 있어야 한다.
+   OS에서 이미 "동작 줄이기"를 켠 사람에게는 물어보지 않고 꺼진다(shell.html의 미디어 쿼리). */
+const MOTION_KEY = 'coilcenter.motion.off';
+function motionOff() {
+  try { return localStorage.getItem(MOTION_KEY) === '1'; } catch (e) { return false; }
+}
+function setMotion(off) {
+  try { localStorage.setItem(MOTION_KEY, off ? '1' : '0'); } catch (e) { /* 무시 */ }
+  document.body.classList.toggle('nomotion', off);
+}
+
 const CTX_KIND = { fact: ['확인', 'k-ok'], est: ['추정', 'k-est'], rumor: ['소문', 'k-rum'] };
 function ctxStrip(items) {
   const list = (items || []).filter(Boolean);
@@ -5615,9 +6019,26 @@ function yardRack(s) {
     <div class="rack">${cells.join('')}</div></div>`;
 }
 
+/* 공장에 남은 선택의 흔적 — 눈에 띄는 결정은 화면에 계속 남아야 "내 공장"이 된다.
+   숫자로 안 잡히는 것들(고양이, 사보 표창)도 여기 걸어둔다. */
+function plantMarks(s, W) {
+  const m = [];
+  if (W.solar === 'own') m.push(['☀', '지붕 태양광', '전기료를 매달 깎고 있습니다']);
+  else if (W.solar === 'lease') m.push(['☀', '지붕 임대 태양광', '20년 계약 · 증축 때 그 지붕은 못 씁니다']);
+  if (W.maintAge <= 2 && W.equip >= 70) m.push(['🔧', '정비 직후', `${W.maintAge}개월 전에 전부 뜯었습니다`]);
+  if (W.spares === true) m.push(['📦', '예비품 확보', '베어링·유압호스가 창고에 있습니다']);
+  if (W.safety === 0) m.push(['🦺', '안전 설비 교체', '크레인 와이어와 보호구를 새로 걸었습니다']);
+  if (W.cat) m.push(['🐈', '공장 고양이', '누가 지었는지는 아무도 말을 안 합니다']);
+  if (W.hires) m.push(['👷', `${W.hires}개 조 증설`, '캐파가 그만큼 늘었습니다']);
+  if ((s.lines || []).length > 2) m.push(['🏭', `라인 ${s.lines.length}기`, '증설한 설비가 돌고 있습니다']);
+  if (!m.length) return '';
+  return `<div class="marks">${m.map(([e, t, n]) =>
+    `<span class="mk" title="${n}"><b>${e}</b>${t}</span>`).join('')}</div>`;
+}
+
 function plantView(s, L) {
   return `<div class="grid g2">
-      <div class="card"><h2>공장동</h2>${hallView(s)}</div>
+      <div class="card"><h2>공장동</h2>${plantMarks(s, G.W)}${hallView(s)}</div>
       <div class="card"><h2>설비 <span class="muted">— 이번 달 주문 기준</span></h2>${lineList(s, L)}</div>
     </div>
     ${yardRack(s)}`;
@@ -5628,6 +6049,7 @@ function render() {
   /* 결재 팝업은 #app 바깥(body 바로 아래)에 붙는다. 화면을 갈아끼워도 혼자 살아남아서,
      예전 판의 카드나 결산 버튼이 새 화면 위에 떠 있게 된다. 그릴 때마다 걷어낸다. */
   document.querySelectorAll('dialog').forEach(d => { try { d.close(); } catch {} d.remove(); });
+  document.body.classList.toggle('nomotion', motionOff());
   if (!G) return renderSetup();
   if (G.s.over) return renderEnd();
   renderPlay();
@@ -5801,6 +6223,94 @@ function goalPanel(s, W) {
   </div>`;
 }
 
+/* 진행 중인 집중 프로젝트 — 목표가 숫자로 걸려 있으니 진척도 숫자로 보여준다.
+   몇 달 남았는지, 지금 몇 퍼센트인지, 이대로 가면 되는지. */
+function projectPanel(s, W) {
+  const pr = W.project;
+  if (!pr) return '';
+  const p = PROJECTS[pr.key];
+  const pct = Math.round(projectProgress(s, W) * 100);
+  const left = Math.max(0, pr.end - s.turn);
+  const spent = p.months - left;
+  // 남은 기간 대비 진척이 따라가고 있는가
+  const pace = spent > 0 ? pct / (spent / p.months * 100) : 1;
+  const st = pct >= 100 ? 'good' : pace >= 0.85 ? 'good' : pace >= 0.55 ? 'warn' : 'bad';
+  const word = pct >= 100 ? '목표 달성 — 남은 기간은 굳히기'
+    : pace >= 0.85 ? '예정대로 가고 있습니다'
+    : pace >= 0.55 ? '조금 뒤처집니다' : '이대로면 미달입니다';
+  return `<div class="card proj p-${st}">
+    <h2>진행 중 · ${p.name}</h2>
+    <div class="pbar"><span style="width:${Math.min(100, pct)}%"></span>
+      <i style="left:${Math.min(100, Math.round(spent / p.months * 100))}%"></i></div>
+    <div class="prow">
+      <span><b>${pct}%</b> ${p.aim}</span>
+      <span>${left > 0 ? `${left}개월 남음 · ${dateLabel(pr.end)} 판가름` : '이번 달 판가름'}</span>
+      <span class="ps">${word}</span>
+    </div>
+    <p class="hint">기준 ${fmtGoal(pr.key, pr.base)} → 목표 ${fmtGoal(pr.key, pr.goal)} ·
+      지금 ${fmtGoal(pr.key, PROJECTS[pr.key].now(s, W))}.
+      목표의 55%를 넘기면 부분 달성으로 봅니다.</p>
+  </div>`;
+}
+/* 목표를 사람이 읽는 단위로. 품질은 내부 지수를 그대로 쓴다 —
+   양품률(%)로 바꾸면 +6이 +0.3%로 보여서 목표가 무의미해 보인다. */
+function fmtGoal(key, v) {
+  return key === 'newcust' ? (v * 100).toFixed(1) + '%'
+       : key === 'quality' ? Math.round(v) + '점'
+       : money(v);
+}
+
+/* 이정표 — 이겼다는 걸 알려주지 않으면 이긴 줄 모른다. */
+function milesBlock(list) {
+  if (!list || !list.length) return '';
+  return list.map(m => {
+    const w = CAST[m.who] || CAST.han;
+    const pic = w.img ? `<img src="${A(w.img + '.png')}" alt="">` : `<div class="em">${w.face}</div>`;
+    return `<div class="mile">
+      <div class="mt">이정표 달성 · ${m.title}</div>
+      <div class="mwho">${pic}<span>${w.name}</span></div>
+      <p class="says">${m.msg}</p>
+      <div class="mnext">다음 목표 — ${m.next}</div>
+    </div>`;
+  }).join('');
+}
+
+/* 앞으로 무엇을 지을 수 있나 — 조건과 예상 효과를 미리 보여준다.
+   미래에 지을 게 보여야 지금 돈을 아낄 이유가 생긴다. */
+function growthPanel(s, W) {
+  const L = look(s);
+  const has = t => s.lines.some(l => l.type === t);
+  const rows = ['SLIT', 'LEVEL', 'BLANK'].map(t => {
+    const cfg = CFG.LINE[t];
+    const newBuild = s.lines.length >= CFG.MAX_LINES;
+    const total = cfg.capex + (newBuild ? CFG.INFRA_TOTAL : 0);
+    const gap = t === 'SLIT' ? L.gapSlit : t === 'LEVEL' ? L.gapLevel : (has('BLANK') ? 0 : cfg.cap * 0.6);
+    const per = (CFG.PROC_MARGIN[t === 'BLANK' ? 'TRAP' : t] || 30) - (CFG.VAR_COST[t === 'BLANK' ? 'TRAP' : t] || 9);
+    const add = Math.max(0, Math.min(cfg.cap, gap));
+    const monthly = add * per - (s.lines.length >= 2 ? CFG.FC_PER_EXTRA_LINE : 0);
+    const ready = runway(s) >= 2.5 && !(s.buildQueue || []).length;
+    const why = (s.buildQueue || []).length ? '이미 짓는 중입니다'
+      : runway(s) < 2.5 ? `자금 여력 ${runway(s).toFixed(1)}개월 — 3개월치는 있어야 합니다`
+      : add < cfg.cap * 0.25 ? '아직 받을 물량이 모자랍니다'
+      : '조건 충족 — 안건으로 올라올 수 있습니다';
+    return { t, label: cfg.label, total, add, monthly, ok: ready && add >= cfg.cap * 0.25, why };
+  });
+  return `<div class="card grow">
+    <h2>앞으로 지을 수 있는 것</h2>
+    <table class="ordt">
+      <tr><th>설비</th><th>총 투자</th><th>지금 받을 수 있는<br>추가 물량</th><th>월 이익 기여<br><i>추정</i></th><th>조건</th></tr>
+      ${rows.map(r => `<tr class="${r.ok ? '' : 'off'}">
+        <td class="oname">${r.label}</td>
+        <td>${money(r.total)}</td>
+        <td>${r.add > 0 ? fmt(Math.round(r.add)) + 't' : '–'}</td>
+        <td>${r.monthly > 0 ? money(r.monthly) : '–'}</td>
+        <td style="text-align:left;font-size:11.5px">${r.why}</td></tr>`).join('')}
+    </table>
+    <p class="hint">기계값보다 그 기계를 먹일 소재값이 큽니다. 석 달치 소재만 ${money(L.need * s.market.pm * 3)}입니다.
+      물량 전망은 본사가 밀어주고 싶어 하는 양에서 지금 우리가 못 받는 만큼을 <b>추정</b>한 값입니다.</p>
+  </div>`;
+}
+
 /* 핵심 지표 다섯. 색만으로 좋고 나쁨을 말하지 않고 상태 단어를 같이 적는다. */
 function kpiRow(s, W) {
   const k = keyMetrics(s, W);
@@ -5954,6 +6464,7 @@ function renderPlay() {
       <b>${s.companyName}</b>
       <span>${periodNow()} <i>${periodIndex()} / ${periodTotal()}</i></span>
       <span class="phase ph-${s.market.phase}">${ph.label}</span>
+      <button class="mini" id="btn-motion">${motionOff() ? '움직임 켜기' : '움직임 끄기'}</button>
       <button class="mini savebtn" id="btn-save">저장하고 나가기</button>
     </div>
 
@@ -5964,6 +6475,8 @@ function renderPlay() {
     ${goalPanel(s, G.W)}
 
     ${kpiRow(s, G.W)}
+
+    ${projectPanel(s, G.W)}
 
     ${topResults(s, G.W)}
 
@@ -5983,6 +6496,13 @@ function renderPlay() {
     <details class="fold"><summary>경영실적 상세표</summary>
       ${perfPanel(s)}
       ${statusPanel(s, G.W)}
+    </details>
+
+    <details class="fold"><summary>지금까지의 이정표${(G.W.miles || []).length ? ` (${G.W.miles.length})` : ''} · 앞으로 지을 수 있는 것</summary>
+      ${(G.W.miles || []).length ? `<div class="card"><h2>지금까지의 이정표</h2>
+        ${G.W.miles.slice().reverse().map(m => `<div class="mrow"><i>${m.date}</i><b>${m.title}</b></div>`).join('')}
+      </div>` : ''}
+      ${growthPanel(s, G.W)}
     </details>
 
     <details class="fold"><summary>공장 · 재고 · 고객 · 수주 현황</summary>
@@ -6038,6 +6558,7 @@ function renderPlay() {
     ${decisionsMade()}`;
 
   $('#go').onclick = () => { dealTurn(); openDecisions(); };
+  $('#btn-motion').onclick = () => { setMotion(!motionOff()); render(); };
   /* 저장은 이 화면(결재 전)에서만 받는다. 결재 팝업 한가운데를 되살리려면
      카드 함수까지 저장해야 하는데, 그건 저장 파일이 아니라 프로그램을 저장하는 일이다. */
   $('#btn-save').onclick = () => {
@@ -6441,6 +6962,7 @@ function advance() {
   const months = G.mpt || 1;
   const reports = [];
   G.W.fired = [];
+  G.W.newMiles = [];          // 이번 기간에 새로 딴 이정표만 결산에서 축하한다
 
   for (let i = 0; i < months; i++) {
     const s = G.s, fired = [];
@@ -6486,6 +7008,8 @@ function advance() {
   settleImpacts(G.s, G.W, mergeReports(reports), G.before || { rel: { ...G.W.rel }, equip: G.W.equip });
   G.W.snaps.push(snapshot(G.s, G.W, mergeReports(reports)));
   G.W.lastFired = G.W.fired;
+  // 이번에 새로 딴 이정표는 결산 화면에서 한 번만 축하하고 목록으로 넘긴다
+
 
   G.resultLines = [];
   G.turnDiscount = 0;
@@ -6576,6 +7100,8 @@ function showReport(R) {
       ${causes.map(c => `<div class="rc"><span>${c.label}</span>
         <b class="${c.amt < 0 ? 'v neg' : 'v pos'}">${c.amt < 0 ? '▼ −$' : '▲ +$'}${money1k(Math.abs(c.amt))}</b></div>`).join('')}
       </div>` : ''}
+
+    ${milesBlock(G.W.newMiles)}
 
     <div class="rrisk"><b>다음 ${R.months > 1 ? '분기' : '달'} 위험</b> — ${risk}</div>
 

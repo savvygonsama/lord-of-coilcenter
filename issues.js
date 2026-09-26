@@ -106,6 +106,11 @@ function worldIssues(s, W, G) {
   if ((W.mem.some(m => m.tag === 'quit' && s.turn - m.turn <= 2) || (s.morale < 50 && wChance(0.15)))
       && since('h-hire') > 10) add(vacancyCard(s, W), 60);
 
+  /* ---------- 이번 분기 집중 프로젝트 ----------
+     분기에 하나. 진행 중이면 안 묻는다 — 벌인 일을 끝내기 전에 또 벌이지 않는다. */
+  if (!W.project && (G.mpt > 1 || month % 3 === 0) && since('proj-pick') >= 2)
+    add(projectPickCard(s, W), 86, true);
+
   /* ---------- 반기 영업 계획 ----------
      "어디에 힘을 쏟을까요"를 매달 물으면 그건 계획이 아니라 잡담이다.
      반기에 한 번, 영업 자원 100점을 고객군에 나누는 자리로 못 박는다. */
@@ -474,10 +479,44 @@ function negoCard(s, W, k, L) {
      "물량은 빨리 느는데 협상이 터프해서 안 받아주면 늘려놓은 걸 뺏긴다"가 이 숫자다. */
   const hold = c.holdLoss ?? 0.22;
 
+  /* 지난 협상에서 내가 뭘 했는지 이 자리에 그대로 들고 온다.
+     양보했으면 또 와서 더 부르고, 버텼으면 이번엔 물량을 걸고 오고,
+     올려 받았으면 이번엔 그걸 되돌리러 온다.
+     "직전 결과 → 이번 요구 이유 → 새 대응"이 이어져야 협상이 대화가 된다. */
+  const LAST = { concede: '양보', 'hold-ok': '동결(버팀)', hold: '동결(이탈)',
+                 raise: '인상 관철', 'raise-fail': '인상 실패', persuade: '품질로 설득',
+                 renege: '약속 파기', tempcut: '한시 인하' };
+  const prevMem = (W.mem || []).filter(m => m.cust === k && LAST[m.tag]).slice(-1)[0];
+  const prev = prevMem ? { tag: prevMem.tag, label: LAST[prevMem.tag], turn: prevMem.turn,
+                           ago: s.turn - prevMem.turn } : null;
+  const history = !prev ? '' :
+      prev.tag === 'concede'
+        ? `지난번에 열어드렸죠. ${prev.ago}개월 만에 또 왔습니다. "그때 되니까 이번에도 되겠지" — 그 얼굴입니다.`
+    : prev.tag === 'hold-ok'
+        ? `지난번엔 우리가 버텼고 그쪽이 물러섰습니다. 이번엔 경쟁사 얘기 대신 물량을 걸고 왔습니다.`
+    : prev.tag === 'hold'
+        ? `지난번에 동결했다가 물량을 뺏겼습니다. 그쪽은 그걸 압니다. 이번엔 더 세게 나옵니다.`
+    : prev.tag === 'raise'
+        ? `지난번에 우리가 올려 받았습니다. 그쪽 구매팀장이 그때 얘기를 꺼내더군요. 이번엔 되돌리러 왔습니다.`
+    : prev.tag === 'raise-fail'
+        ? `지난번에 올려달라 했다가 못 받았습니다. 그쪽은 우리가 아쉬운 걸 압니다.`
+    : prev.tag === 'persuade'
+        ? `지난번엔 품질 자료로 동결시켰습니다. 이번엔 "그 자료 이번에도 있냐"고 먼저 묻더군요.`
+    : prev.tag === 'renege'
+        ? `지난번에 약속을 뒤집은 건이 아직 안 풀렸습니다. 이번 자리 분위기가 좋지 않습니다.`
+    : `지난번엔 한시 인하로 급한 불만 껐습니다. 그 기한이 끝난 걸 그쪽도 압니다.`;
+  /* 직전 결과가 이번 요구의 크기를 움직인다 */
+  const memAsk = !prev ? 0
+    : prev.tag === 'concede' ? 1
+    : prev.tag === 'hold' ? 1
+    : prev.tag === 'raise' ? 1
+    : prev.tag === 'hold-ok' ? -1
+    : prev.tag === 'persuade' ? -1 : 0;
+
   /* 고객이 부르는 값 — 시황·경쟁·의존도, 그리고 그 고객군이 원래 얼마나 세게 부르는지(askAdd)가 정한다.
      가공마진이 톤당 $40인 장사라 여기서 $6을 내주면 그 고객 마진의 15%가 한 번에 날아간다. */
   const ask = Math.max(pledged, Math.max(0, Math.min(9,
-    2 + (c.askAdd || 0)
+    2 + (c.askAdd || 0) + memAsk
     + (I.slack ? 2 : 0) + (I.threat ? 2 : 0) + (I.comp > 50 ? 1 : 0) + (I.dep ? 1 : 0) - (I.tight ? 2 : 0))));
   /* 우리가 올려 부를 수 있는 값 */
   const up = Math.max(2, Math.min(6, 2 + (I.tight ? 2 : 0) + (I.pmUp ? 1 : 0) + (I.cut >= 6 ? 1 : 0)));
@@ -494,6 +533,7 @@ function negoCard(s, W, k, L) {
 
   /* 정 부장이 들고 온 정보. 하나하나가 위 숫자의 근거다. */
   const intel = [
+    history,
     pledged ? `그리고 이건 먼저 말씀드려야겠습니다 — 지난번에 사장님이 이번 협상에서 열어주시겠다고 하셨습니다. `
             + `그쪽 구매팀장이 그때 적어둔 수첩을 그대로 펴놓고 앉아 있습니다.` : '',
     I.threat
@@ -644,6 +684,9 @@ function negoCard(s, W, k, L) {
     { kind: 'est', label: `${c.name} 물량 전망`, value: I.outlook === 'up' ? '증가' : I.outlook === 'down' ? '정체' : '보합',
       note: I.outlook === 'down' ? '단가를 내줘도 물량은 안 따라옵니다' : null },
     pledged ? { kind: 'fact', label: '지난 약속', value: `−$${pledged}/t 열어주기로 함`, warn: true } : null,
+    prev ? { kind: 'fact', label: '지난 협상 결과', value: `${prev.label} · ${prev.ago}개월 전`,
+      note: memAsk > 0 ? '그래서 이번엔 더 세게 부릅니다' : memAsk < 0 ? '그래서 이번엔 조심스럽게 나옵니다' : null,
+      warn: memAsk > 0 } : { kind: 'fact', label: '지난 협상 결과', value: '이 고객과는 처음입니다' },
   ];
 
   return {
@@ -740,6 +783,58 @@ function spotBetCard(s, W, L) {
       mk(0.5, `절반 ${fmt(Math.round(qty * 0.5))}톤만 받는다`, '반만 건다'),
       mk(0, '받지 않는다', '창고에 안 눕히는 것도 실력'),
     ],
+  };
+}
+
+/* ============================================================
+   이번 분기 집중 프로젝트 — 안건은 회사가 올리고, 이건 사장이 건다.
+
+   목표를 숫자로 걸고 매달 진척이 보이고, 끝나는 달에 성공·부분·실패가 판가름 난다.
+   셋 다 대가가 다르다 — 영업은 돈, 품질은 이번 분기 캐파, 재무는 고객 관계.
+   그래서 매 분기 같은 게 정답이 되지 않는다.
+   ============================================================ */
+function projectPickCard(s, W) {
+  const opts = projectOptions(s, W);
+  const done = (W.projectLog || []).length;
+  const ctx = [
+    { kind: 'fact', label: '지금 제일 급한 것', value: PROJECTS[opts[0].key].name,
+      note: opts[0].why },
+    { kind: 'fact', label: '자금 여력', value: `${runway(s).toFixed(1)}개월치`, warn: runway(s) < 2 },
+    { kind: 'fact', label: '재고율 · 품질 · 점유율',
+      value: `${coverOf(s).toFixed(1)}개월 · ${qualityPct(W.quality)}% · ${(s.myShare * 100).toFixed(1)}%` },
+    done ? { kind: 'fact', label: '지난 프로젝트',
+      value: (W.projectLog.slice(-1)[0].grade === 'win' ? '목표 달성' : W.projectLog.slice(-1)[0].grade === 'half' ? '부분 달성' : '미달')
+        + ` (${W.projectLog.slice(-1)[0].name})` } : null,
+  ];
+  return {
+    id: 'proj-pick', who: 'han', topic: 'proj', ctx,
+    title: '이번 분기에 뭘 붙잡고 갈까요',
+    text: `사장님, 분기 하나에 하나씩만 제대로 하시죠. 세 가지를 동시에 하면 세 가지 다 안 됩니다. `
+        + `${done ? `지금까지 ${done}건 했고요. ` : '부임하고 처음 거는 겁니다. '}`
+        + `목표는 숫자로 걸겠습니다. 끝나는 달에 됐는지 안 됐는지 제가 그대로 보고드리겠습니다. `
+        + `안 하셔도 됩니다. 그것도 결정입니다.`,
+    opts: opts.map(({ key, p, why, score }) => ({
+      label: p.name,
+      hint: score >= 3 ? '지금 이게 제일 급합니다' : score >= 1 ? '해둘 만합니다' : '지금은 급하지 않습니다',
+      fx: [`−${p.cost}`, `+목표 ${p.aim}`, `?${p.months}개월 뒤 판가름`,
+           score < 1 ? '?지금 상태에선 효과가 작습니다' : null].filter(Boolean),
+      apply: (st, G) => {
+        const pr = startProject(st, W, G, key);
+        styleAdd(W, key === 'newcust' ? 'grow' : key === 'quality' ? 'craft' : 'cash', 2);
+        lever(G, `집중 프로젝트 · ${p.name}`, { cash: -p.budget,
+          risk: `${dateLabel(pr.end)}에 ${p.aim} 달성 여부가 판가름 납니다` });
+        return `${p.name}으로 걸었습니다. ${why} `
+             + `목표는 ${p.aim}이고, ${dateLabel(pr.end)}에 결과 보고드리겠습니다. `
+             + `진척은 매달 첫 화면에 띄워두겠습니다.`;
+      },
+    })).concat([{
+      label: '이번 분기는 걸지 않는다', hint: '벌여둔 일부터 정리한다',
+      fx: ['+예산·인력 아낌', '−아무것도 나아지지 않습니다'],
+      apply: (st, G) => {
+        lever(G, '집중 프로젝트 보류', { risk: '이번 분기에 개선되는 지표 없음' });
+        return '알겠습니다. 이번 분기는 있는 걸로 버티는 겁니다. 그것도 한 방법입니다.';
+      },
+    }]),
   };
 }
 

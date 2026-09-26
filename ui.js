@@ -538,6 +538,18 @@ function openDecisions() {
    확인 / 추정 / 소문을 구분해서 붙인다. 숨겨진 미래 난수는 올리지 않는다 —
    지금 사장이 알 수 있는 것만 올린다.
    ============================================================ */
+/* 움직임 끄기. 이 게임의 중요한 정보는 전부 정지 화면의 글자와 숫자로 전달된다 —
+   애니메이션은 장식이고, 끄고 싶은 사람은 끌 수 있어야 한다.
+   OS에서 이미 "동작 줄이기"를 켠 사람에게는 물어보지 않고 꺼진다(shell.html의 미디어 쿼리). */
+const MOTION_KEY = 'coilcenter.motion.off';
+function motionOff() {
+  try { return localStorage.getItem(MOTION_KEY) === '1'; } catch (e) { return false; }
+}
+function setMotion(off) {
+  try { localStorage.setItem(MOTION_KEY, off ? '1' : '0'); } catch (e) { /* 무시 */ }
+  document.body.classList.toggle('nomotion', off);
+}
+
 const CTX_KIND = { fact: ['확인', 'k-ok'], est: ['추정', 'k-est'], rumor: ['소문', 'k-rum'] };
 function ctxStrip(items) {
   const list = (items || []).filter(Boolean);
@@ -1020,9 +1032,26 @@ function yardRack(s) {
     <div class="rack">${cells.join('')}</div></div>`;
 }
 
+/* 공장에 남은 선택의 흔적 — 눈에 띄는 결정은 화면에 계속 남아야 "내 공장"이 된다.
+   숫자로 안 잡히는 것들(고양이, 사보 표창)도 여기 걸어둔다. */
+function plantMarks(s, W) {
+  const m = [];
+  if (W.solar === 'own') m.push(['☀', '지붕 태양광', '전기료를 매달 깎고 있습니다']);
+  else if (W.solar === 'lease') m.push(['☀', '지붕 임대 태양광', '20년 계약 · 증축 때 그 지붕은 못 씁니다']);
+  if (W.maintAge <= 2 && W.equip >= 70) m.push(['🔧', '정비 직후', `${W.maintAge}개월 전에 전부 뜯었습니다`]);
+  if (W.spares === true) m.push(['📦', '예비품 확보', '베어링·유압호스가 창고에 있습니다']);
+  if (W.safety === 0) m.push(['🦺', '안전 설비 교체', '크레인 와이어와 보호구를 새로 걸었습니다']);
+  if (W.cat) m.push(['🐈', '공장 고양이', '누가 지었는지는 아무도 말을 안 합니다']);
+  if (W.hires) m.push(['👷', `${W.hires}개 조 증설`, '캐파가 그만큼 늘었습니다']);
+  if ((s.lines || []).length > 2) m.push(['🏭', `라인 ${s.lines.length}기`, '증설한 설비가 돌고 있습니다']);
+  if (!m.length) return '';
+  return `<div class="marks">${m.map(([e, t, n]) =>
+    `<span class="mk" title="${n}"><b>${e}</b>${t}</span>`).join('')}</div>`;
+}
+
 function plantView(s, L) {
   return `<div class="grid g2">
-      <div class="card"><h2>공장동</h2>${hallView(s)}</div>
+      <div class="card"><h2>공장동</h2>${plantMarks(s, G.W)}${hallView(s)}</div>
       <div class="card"><h2>설비 <span class="muted">— 이번 달 주문 기준</span></h2>${lineList(s, L)}</div>
     </div>
     ${yardRack(s)}`;
@@ -1033,6 +1062,7 @@ function render() {
   /* 결재 팝업은 #app 바깥(body 바로 아래)에 붙는다. 화면을 갈아끼워도 혼자 살아남아서,
      예전 판의 카드나 결산 버튼이 새 화면 위에 떠 있게 된다. 그릴 때마다 걷어낸다. */
   document.querySelectorAll('dialog').forEach(d => { try { d.close(); } catch {} d.remove(); });
+  document.body.classList.toggle('nomotion', motionOff());
   if (!G) return renderSetup();
   if (G.s.over) return renderEnd();
   renderPlay();
@@ -1206,6 +1236,94 @@ function goalPanel(s, W) {
   </div>`;
 }
 
+/* 진행 중인 집중 프로젝트 — 목표가 숫자로 걸려 있으니 진척도 숫자로 보여준다.
+   몇 달 남았는지, 지금 몇 퍼센트인지, 이대로 가면 되는지. */
+function projectPanel(s, W) {
+  const pr = W.project;
+  if (!pr) return '';
+  const p = PROJECTS[pr.key];
+  const pct = Math.round(projectProgress(s, W) * 100);
+  const left = Math.max(0, pr.end - s.turn);
+  const spent = p.months - left;
+  // 남은 기간 대비 진척이 따라가고 있는가
+  const pace = spent > 0 ? pct / (spent / p.months * 100) : 1;
+  const st = pct >= 100 ? 'good' : pace >= 0.85 ? 'good' : pace >= 0.55 ? 'warn' : 'bad';
+  const word = pct >= 100 ? '목표 달성 — 남은 기간은 굳히기'
+    : pace >= 0.85 ? '예정대로 가고 있습니다'
+    : pace >= 0.55 ? '조금 뒤처집니다' : '이대로면 미달입니다';
+  return `<div class="card proj p-${st}">
+    <h2>진행 중 · ${p.name}</h2>
+    <div class="pbar"><span style="width:${Math.min(100, pct)}%"></span>
+      <i style="left:${Math.min(100, Math.round(spent / p.months * 100))}%"></i></div>
+    <div class="prow">
+      <span><b>${pct}%</b> ${p.aim}</span>
+      <span>${left > 0 ? `${left}개월 남음 · ${dateLabel(pr.end)} 판가름` : '이번 달 판가름'}</span>
+      <span class="ps">${word}</span>
+    </div>
+    <p class="hint">기준 ${fmtGoal(pr.key, pr.base)} → 목표 ${fmtGoal(pr.key, pr.goal)} ·
+      지금 ${fmtGoal(pr.key, PROJECTS[pr.key].now(s, W))}.
+      목표의 55%를 넘기면 부분 달성으로 봅니다.</p>
+  </div>`;
+}
+/* 목표를 사람이 읽는 단위로. 품질은 내부 지수를 그대로 쓴다 —
+   양품률(%)로 바꾸면 +6이 +0.3%로 보여서 목표가 무의미해 보인다. */
+function fmtGoal(key, v) {
+  return key === 'newcust' ? (v * 100).toFixed(1) + '%'
+       : key === 'quality' ? Math.round(v) + '점'
+       : money(v);
+}
+
+/* 이정표 — 이겼다는 걸 알려주지 않으면 이긴 줄 모른다. */
+function milesBlock(list) {
+  if (!list || !list.length) return '';
+  return list.map(m => {
+    const w = CAST[m.who] || CAST.han;
+    const pic = w.img ? `<img src="${A(w.img + '.png')}" alt="">` : `<div class="em">${w.face}</div>`;
+    return `<div class="mile">
+      <div class="mt">이정표 달성 · ${m.title}</div>
+      <div class="mwho">${pic}<span>${w.name}</span></div>
+      <p class="says">${m.msg}</p>
+      <div class="mnext">다음 목표 — ${m.next}</div>
+    </div>`;
+  }).join('');
+}
+
+/* 앞으로 무엇을 지을 수 있나 — 조건과 예상 효과를 미리 보여준다.
+   미래에 지을 게 보여야 지금 돈을 아낄 이유가 생긴다. */
+function growthPanel(s, W) {
+  const L = look(s);
+  const has = t => s.lines.some(l => l.type === t);
+  const rows = ['SLIT', 'LEVEL', 'BLANK'].map(t => {
+    const cfg = CFG.LINE[t];
+    const newBuild = s.lines.length >= CFG.MAX_LINES;
+    const total = cfg.capex + (newBuild ? CFG.INFRA_TOTAL : 0);
+    const gap = t === 'SLIT' ? L.gapSlit : t === 'LEVEL' ? L.gapLevel : (has('BLANK') ? 0 : cfg.cap * 0.6);
+    const per = (CFG.PROC_MARGIN[t === 'BLANK' ? 'TRAP' : t] || 30) - (CFG.VAR_COST[t === 'BLANK' ? 'TRAP' : t] || 9);
+    const add = Math.max(0, Math.min(cfg.cap, gap));
+    const monthly = add * per - (s.lines.length >= 2 ? CFG.FC_PER_EXTRA_LINE : 0);
+    const ready = runway(s) >= 2.5 && !(s.buildQueue || []).length;
+    const why = (s.buildQueue || []).length ? '이미 짓는 중입니다'
+      : runway(s) < 2.5 ? `자금 여력 ${runway(s).toFixed(1)}개월 — 3개월치는 있어야 합니다`
+      : add < cfg.cap * 0.25 ? '아직 받을 물량이 모자랍니다'
+      : '조건 충족 — 안건으로 올라올 수 있습니다';
+    return { t, label: cfg.label, total, add, monthly, ok: ready && add >= cfg.cap * 0.25, why };
+  });
+  return `<div class="card grow">
+    <h2>앞으로 지을 수 있는 것</h2>
+    <table class="ordt">
+      <tr><th>설비</th><th>총 투자</th><th>지금 받을 수 있는<br>추가 물량</th><th>월 이익 기여<br><i>추정</i></th><th>조건</th></tr>
+      ${rows.map(r => `<tr class="${r.ok ? '' : 'off'}">
+        <td class="oname">${r.label}</td>
+        <td>${money(r.total)}</td>
+        <td>${r.add > 0 ? fmt(Math.round(r.add)) + 't' : '–'}</td>
+        <td>${r.monthly > 0 ? money(r.monthly) : '–'}</td>
+        <td style="text-align:left;font-size:11.5px">${r.why}</td></tr>`).join('')}
+    </table>
+    <p class="hint">기계값보다 그 기계를 먹일 소재값이 큽니다. 석 달치 소재만 ${money(L.need * s.market.pm * 3)}입니다.
+      물량 전망은 본사가 밀어주고 싶어 하는 양에서 지금 우리가 못 받는 만큼을 <b>추정</b>한 값입니다.</p>
+  </div>`;
+}
+
 /* 핵심 지표 다섯. 색만으로 좋고 나쁨을 말하지 않고 상태 단어를 같이 적는다. */
 function kpiRow(s, W) {
   const k = keyMetrics(s, W);
@@ -1359,6 +1477,7 @@ function renderPlay() {
       <b>${s.companyName}</b>
       <span>${periodNow()} <i>${periodIndex()} / ${periodTotal()}</i></span>
       <span class="phase ph-${s.market.phase}">${ph.label}</span>
+      <button class="mini" id="btn-motion">${motionOff() ? '움직임 켜기' : '움직임 끄기'}</button>
       <button class="mini savebtn" id="btn-save">저장하고 나가기</button>
     </div>
 
@@ -1369,6 +1488,8 @@ function renderPlay() {
     ${goalPanel(s, G.W)}
 
     ${kpiRow(s, G.W)}
+
+    ${projectPanel(s, G.W)}
 
     ${topResults(s, G.W)}
 
@@ -1388,6 +1509,13 @@ function renderPlay() {
     <details class="fold"><summary>경영실적 상세표</summary>
       ${perfPanel(s)}
       ${statusPanel(s, G.W)}
+    </details>
+
+    <details class="fold"><summary>지금까지의 이정표${(G.W.miles || []).length ? ` (${G.W.miles.length})` : ''} · 앞으로 지을 수 있는 것</summary>
+      ${(G.W.miles || []).length ? `<div class="card"><h2>지금까지의 이정표</h2>
+        ${G.W.miles.slice().reverse().map(m => `<div class="mrow"><i>${m.date}</i><b>${m.title}</b></div>`).join('')}
+      </div>` : ''}
+      ${growthPanel(s, G.W)}
     </details>
 
     <details class="fold"><summary>공장 · 재고 · 고객 · 수주 현황</summary>
@@ -1443,6 +1571,7 @@ function renderPlay() {
     ${decisionsMade()}`;
 
   $('#go').onclick = () => { dealTurn(); openDecisions(); };
+  $('#btn-motion').onclick = () => { setMotion(!motionOff()); render(); };
   /* 저장은 이 화면(결재 전)에서만 받는다. 결재 팝업 한가운데를 되살리려면
      카드 함수까지 저장해야 하는데, 그건 저장 파일이 아니라 프로그램을 저장하는 일이다. */
   $('#btn-save').onclick = () => {
@@ -1846,6 +1975,7 @@ function advance() {
   const months = G.mpt || 1;
   const reports = [];
   G.W.fired = [];
+  G.W.newMiles = [];          // 이번 기간에 새로 딴 이정표만 결산에서 축하한다
 
   for (let i = 0; i < months; i++) {
     const s = G.s, fired = [];
@@ -1891,6 +2021,8 @@ function advance() {
   settleImpacts(G.s, G.W, mergeReports(reports), G.before || { rel: { ...G.W.rel }, equip: G.W.equip });
   G.W.snaps.push(snapshot(G.s, G.W, mergeReports(reports)));
   G.W.lastFired = G.W.fired;
+  // 이번에 새로 딴 이정표는 결산 화면에서 한 번만 축하하고 목록으로 넘긴다
+
 
   G.resultLines = [];
   G.turnDiscount = 0;
@@ -1981,6 +2113,8 @@ function showReport(R) {
       ${causes.map(c => `<div class="rc"><span>${c.label}</span>
         <b class="${c.amt < 0 ? 'v neg' : 'v pos'}">${c.amt < 0 ? '▼ −$' : '▲ +$'}${money1k(Math.abs(c.amt))}</b></div>`).join('')}
       </div>` : ''}
+
+    ${milesBlock(G.W.newMiles)}
 
     <div class="rrisk"><b>다음 ${R.months > 1 ? '분기' : '달'} 위험</b> — ${risk}</div>
 

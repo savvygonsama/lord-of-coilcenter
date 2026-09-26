@@ -64,6 +64,9 @@ function initWorld(s, diff) {
     comp: 35,                     // 경쟁사 공격성 (숨김)
     deferMaint: 1, maintAge: 7, maintCool: 0,   // 이 턴이 지나야 정비 안건을 다시 올릴 수 있다
     negoTurn: {},                 // 고객별 마지막 단가 협상 턴
+    /* 집중 프로젝트와 이정표 */
+    project: null, projectLog: [], projBoost: {}, projCapHit: 1,
+    miles: [], newMiles: [],
     priceDir: 0, priceRumor: null, // 본사 가격 방향 (숨김) 과 그에 대한 소문
     policy: 'normal',
     hq: { target: 0, ytd: 0, commit: null, log: [] },
@@ -229,7 +232,7 @@ function runway(s) {
    매달 결산 직전 — 숨은 상태가 엔진의 캐파와 수율을 움직인다
    ============================================================ */
 function worldPre(s, W) {
-  let cap = W.capHit * (1 + (W.capBonus || 0));        // 고장·정비·인력 공백, 충원한 인력
+  let cap = W.capHit * (1 + (W.capBonus || 0)) * (W.projCapHit || 1);  // 고장·정비·인력 공백, 충원, 진행 중인 프로젝트
   if (W.equip < 60) cap *= 1 - (60 - W.equip) * 0.004;  // 잔고장
   s.mods = { capMult: cap, yieldAdj: (W.quality - 75) * 0.0005 };
 }
@@ -343,6 +346,10 @@ function worldPost(s, W, R, G) {
 
   // 12. 다음에 터질 일 — 확률은 지금까지의 선택이 만든다
   if ((G.mpt || 1) === 1 || s.turn % 3 === 0) rollIncidents(s, W, (G.mpt || 1) > 1 ? 1.8 : 1);
+
+  // 13. 집중 프로젝트 진척과 이정표
+  projectTick(s, W, R, G);
+  checkMilestones(s, W, R);
 }
 
 function rollIncidents(s, W, k = 1) {
@@ -649,4 +656,255 @@ function lineUtilOf(R) {
   const r = (R && R.run) || {}, c = (R && R.capNow) || {};
   const u = (x, y) => (y > 0 ? x / y : null);
   return { SLIT: u(r.SLIT || 0, c.SLIT), LEVEL: u(r.LEVEL || 0, c.LEVEL), BLANK: u((r.TRAP || 0) + (r.DIE || 0), c.BLANK) };
+}
+
+/* ============================================================
+   집중 프로젝트 — 분기마다 사장이 직접 고르는 한 가지.
+
+   안건은 회사가 올려주는 것이고, 이건 사장이 거는 것이다.
+   목표를 숫자로 걸고, 매달 진척이 보이고, 끝나는 달에 성공·부분·실패가 판가름 난다.
+   기존 시스템에 얹는다 — 영업은 effortQueue와 myShare, 품질은 W.quality,
+   재무는 매출채권·재고를 그대로 쓴다. 비슷한 걸 새로 만들지 않는다.
+
+   매 분기 같은 게 정답이 되지 않도록 셋 다 대가가 다르다.
+   영업은 돈, 품질은 이번 분기 캐파, 재무는 고객 관계를 내놓는다.
+   ============================================================ */
+const PROJECTS = {
+  newcust: {
+    name: '신규 고객 개척', who: 'jung', months: 6,
+    budget: 180_000,
+    cost: '예산 $180k · 영업이 여섯 달 붙습니다',
+    aim: '우리 시장 점유율 +9%',
+    /* 왜 지금인가 — 상태에서 점수를 매긴다. 높을수록 지금 할 만한 일이다. */
+    fit: (s, W) => {
+      const top = Math.max(...Object.keys(CUST).map(k => s.custShare[k] || 0));
+      return (top > 0.45 ? 2 : 0) + (s.myShare < 0.13 ? 2 : 0)
+           + ((W.utilHist.slice(-1)[0] ?? 0.8) < 0.85 ? 1 : 0);
+    },
+    why: (s, W) => {
+      const tk = topCust(s), top = s.custShare[tk] || 0;
+      return top > 0.45
+        ? `${cname(tk)} 하나가 우리 물량의 ${Math.round(top * 100)}%입니다. 거기가 기침하면 우리가 앓아눕습니다.`
+        : `점유율이 ${(s.myShare * 100).toFixed(1)}%입니다. 이 시장에서 이 크기로는 협상 테이블에서 목소리가 안 납니다.`;
+    },
+    base: s => s.myShare,
+    now: s => s.myShare,
+    goal: b => b * 1.09,
+    start: (s, W, G) => {
+      s.cash -= 180_000;
+      // 기존 영업 투자 큐를 그대로 쓴다. 매달 조금씩 효과가 도착한다.
+      for (let i = 0; i < 6; i++) s.effortQueue.push({ amount: 30_000, turnsLeft: CFG.SALES_EFFORT_LAG + i });
+    },
+    win: (s, W) => { s.myShare = Math.min(0.60, s.myShare * 1.04); W.projBoost.vol = (W.projBoost.vol || 0) + 6;
+      return '신규 거래처 두 곳을 뚫었습니다. 이런 건 여섯 달 붙어야 열립니다. 당분간 수주 얘기가 더 들어올 겁니다.'; },
+    half: (s, W) => { s.myShare = Math.min(0.60, s.myShare * 1.015); W.projBoost.vol = (W.projBoost.vol || 0) + 3;
+      return '한 곳은 뚫었고 한 곳은 내년을 보자고 합니다. 반쯤 된 겁니다. 반쯤 된 것도 된 겁니다.'; },
+    lose: (s, W) => { s.morale = wClamp(s.morale - 3);
+      return '여섯 달 돌았는데 계약서까지 간 데가 없습니다. 예산만 썼습니다. 제 책임입니다.'; },
+  },
+
+  quality: {
+    name: '품질·납기 개선', who: 'oh', months: 6,
+    budget: 120_000,
+    cost: '예산 $120k · 진행 중 캐파 3% 감소',
+    aim: '품질 지수 +6',
+    fit: (s, W) => (W.quality < 72 ? 2 : 0) + (W.stats.claims > 0 ? 1 : 0)
+           + (W.stats.shortages > 0 ? 1 : 0) + (W.equip < 60 ? 1 : 0),
+    why: (s, W) => W.quality < 72
+      ? `양품률이 ${qualityPct(W.quality)}%입니다. 이 수치로는 단가 협상에서 우리가 할 말이 없습니다.`
+      : `지금은 괜찮습니다. 괜찮을 때 올려놔야 나중에 협상 자료가 됩니다.`,
+    base: (s, W) => W.quality,
+    now: (s, W) => W.quality,
+    goal: b => Math.min(96, b + 6),
+    start: (s, W, G) => { s.cash -= 120_000; W.projCapHit = 0.97; },
+    /* 프로젝트는 매달 실제로 일한다. 표준작업서·검사공정이 품질 목표치를 끌어올리고,
+       품질은 그 목표치를 향해 천천히 따라간다(worldPost 3번).
+       다만 설비가 낡거나 현장이 지쳐 있으면 목표치 자체가 안 올라간다 —
+       그래서 같은 프로젝트라도 회사 상태에 따라 되기도 하고 안 되기도 한다. */
+    tick: (s, W) => { W.qBoost = Math.max(W.qBoost, 12); W.projCapHit = 0.97; },
+    win: (s, W) => { W.qBoost += 6; W.projBoost.qual = (W.projBoost.qual || 0) + 6; s.morale = wClamp(s.morale + 4);
+      return '표준작업서를 다시 쓰고 검사 공정을 하나 넣었습니다. 불량률이 눈에 띄게 내려갔습니다. 이제 고객사에 들고 갈 자료가 생겼습니다.'; },
+    half: (s, W) => { W.qBoost += 3; W.projBoost.qual = (W.projBoost.qual || 0) + 2;
+      return '절반쯤 왔습니다. 표준은 만들었는데 현장에 붙는 데 시간이 더 걸립니다.'; },
+    lose: (s, W) => '서류는 늘었는데 숫자는 그대로입니다. 이런 건 위에서 밀면 안 되는 일이었습니다.',
+  },
+
+  cash: {
+    name: '채권 회수·재고 정상화', who: 'han', months: 3,
+    budget: 60_000,
+    cost: '예산 $60k · 대금 독촉으로 고객 관계 하락',
+    aim: '순운전자본 −12%',
+    fit: (s, W) => (runway(s) < 2.2 ? 2 : 0) + (coverOf(s) > COVER.heavy ? 2 : 0)
+           + (s.debt.limit > 0 && s.debt.principal / s.debt.limit > 0.7 ? 1 : 0),
+    why: (s, W) => coverOf(s) > COVER.heavy
+      ? `재고율이 ${coverOf(s).toFixed(1)}개월입니다. 창고에 돈이 서 있습니다.`
+      : `현금과 한도를 다 합쳐 ${runway(s).toFixed(1)}개월치입니다. 이건 경영이 아니라 외줄타기입니다.`,
+    base: s => nwcOf(s),
+    now: s => nwcOf(s),
+    goal: b => b * 0.88,
+    lower: true,                                  // 낮아져야 성공하는 목표
+    start: (s, W, G) => {
+      s.cash -= 60_000;
+      for (const k in CUST) W.rel[k] = wClamp(W.rel[k] - 3);
+    },
+    /* 매달 채권을 조금씩 당겨 받는다. 수수료를 물고 현금을 사는 것이라 이익은 줄고 통장은 는다.
+       그런데 그 사이에 재고를 잔뜩 쌓으면 순운전자본은 그대로다 —
+       채권을 걷는 것과 재고를 줄이는 것, 둘 다 해야 목표가 맞는다. */
+    tick: (s, W) => {
+      const ar = s.ar.reduce((a, x) => a + x.amount, 0);
+      let target = ar * 0.11, got = 0;
+      for (const a of s.ar.slice().sort((x, y) => x.dueTurn - y.dueTurn)) {
+        if (got >= target) break;
+        const take = Math.min(a.amount, target - got);
+        got += take; a.amount -= take;
+      }
+      s.ar = s.ar.filter(a => a.amount > 1e-6);
+      s.cash += got * 0.985;
+    },
+    win: (s, W) => {
+      // 묵은 현물을 털고 채권을 당겨 받는다. 실제로 장부를 움직인다.
+      let got = 0;
+      for (const l of s.invRaw) {
+        const age = s.turn - l.arrivalTurn;
+        if (age < CFG.DUMP_AGE_TURNS || l.qty <= 0) continue;
+        got += l.qty * l.unitCost * 0.7; l.qty = 0;
+      }
+      s.invRaw = s.invRaw.filter(l => l.qty > 1e-6);
+      s.cash += got;
+      W.projBoost.credit = (W.projBoost.credit || 0) + 1;
+      return got > 1000
+        ? `묵은 현물을 털고 밀린 채권을 걷었습니다. 통장에 $${money1k(got)} 들어왔습니다. 장부는 조금 아프고 통장은 숨을 쉽니다.`
+        : '채권을 다 걷었습니다. 털 재고가 없어서 현금 유입은 크지 않은데, 운전자본은 확실히 줄었습니다.';
+    },
+    half: (s, W) => '절반쯤 줄였습니다. 큰 데 한 곳이 끝까지 안 줬습니다. 그건 다음 분기 숙제입니다.',
+    lose: (s, W) => '숫자가 안 줄었습니다. 재고는 안 팔리고 채권은 안 들어왔습니다. 독촉만 하고 관계만 상했습니다.',
+  },
+};
+
+/* 순운전자본 — 재무 프로젝트의 측정 기준. 결산표가 쓰는 정의와 같아야 한다. */
+function nwcOf(s) {
+  const ar = s.ar.reduce((a, x) => a + x.amount, 0);
+  const inv = s.invRaw.reduce((a, l) => a + l.qty * l.unitCost, 0)
+            + s.invFg.reduce((a, l) => a + l.qty * (l.unitCost || 0), 0);
+  const ap = (s.ap || []).reduce((a, x) => a + (x.amount || 0), 0);
+  return ar + inv - ap;
+}
+
+/* 지금 상태에서 어느 프로젝트가 말이 되는지 점수 순으로 돌려준다.
+   점수가 곧 "왜 지금인가"의 근거다. 매 분기 같은 게 1등이 되지 않도록
+   방금 한 것은 점수를 깎는다. */
+function projectOptions(s, W) {
+  return Object.entries(PROJECTS).map(([key, p]) => {
+    const recent = (W.projectLog || []).filter(x => x.key === key).slice(-1)[0];
+    const penalty = recent ? Math.max(0, 3 - (s.turn - recent.end)) : 0;
+    return { key, p, score: p.fit(s, W) - penalty, why: p.why(s, W) };
+  }).sort((a, b) => b.score - a.score);
+}
+
+function startProject(s, W, G, key) {
+  const p = PROJECTS[key];
+  const base = p.base(s, W);
+  W.project = {
+    key, start: s.turn, end: s.turn + p.months,
+    base, goal: p.goal(base), lower: !!p.lower, progress: 0,
+  };
+  p.start(s, W, G);
+  remember(W, s, 'project', `집중 프로젝트 · ${p.name}`);
+  return W.project;
+}
+
+/* 지금 몇 퍼센트 왔나. 0~1로 자른다. 낮아져야 하는 목표는 방향을 뒤집는다. */
+function projectProgress(s, W) {
+  const pr = W.project; if (!pr) return 0;
+  const p = PROJECTS[pr.key];
+  const now = p.now(s, W);
+  const span = pr.goal - pr.base;
+  if (Math.abs(span) < 1e-9) return 1;
+  return Math.max(0, Math.min(1, (now - pr.base) / span));
+}
+
+/* 매달 굴린다. 끝나는 달에 성공·부분·실패를 가른다. */
+function projectTick(s, W, R, G) {
+  W.projBoost = W.projBoost || {};
+  const pr = W.project;
+  if (!pr) { W.projCapHit = 1; return; }
+  if (PROJECTS[pr.key].tick) PROJECTS[pr.key].tick(s, W);
+  pr.progress = projectProgress(s, W);
+  if (s.turn < pr.end) return;
+
+  const p = PROJECTS[pr.key];
+  const pct = pr.progress;
+  const grade = pct >= 1 ? 'win' : pct >= 0.55 ? 'half' : 'lose';
+  const msg = p[grade](s, W);
+  W.projCapHit = 1;
+  W.projectLog = W.projectLog || [];
+  W.projectLog.push({ key: pr.key, name: p.name, start: pr.start, end: pr.end, pct, grade });
+  fire(W, s, 'project',
+    `집중 프로젝트 「${p.name}」 ${grade === 'win' ? '목표 달성' : grade === 'half' ? '부분 달성' : '미달'} — `
+    + `${p.aim} 대비 ${Math.round(pct * 100)}%. ${msg}`,
+    `${dateLabel(pr.start)}에 건 프로젝트`,
+    { turn: pr.start, date: dateLabel(pr.start), label: `집중 프로젝트 · ${p.name}`,
+      gap: p.months, ago: ago(p.months) });
+  if (grade === 'win') milestone(W, s, 'proj-win', `첫 집중 프로젝트 성공 — ${p.name}`, p.who,
+    '목표를 숫자로 걸고 여섯 달을 버텨서 그 숫자를 만들었습니다.', '다음 분기에 또 하나 걸어보시죠.');
+  W.project = null;
+}
+
+/* ============================================================
+   이정표 — 이겼다는 걸 알려주지 않으면 이긴 줄 모른다.
+
+   보너스를 주는 장치가 아니다. 내 선택이 실제 지표를 움직였다는 걸
+   그 자리에서 이름 붙여주는 장치다. 한 번 달성한 것은 다시 안 뜬다.
+   ============================================================ */
+function milestone(W, s, key, title, who, msg, next) {
+  W.miles = W.miles || [];
+  if (W.miles.some(m => m.key === key)) return false;
+  W.miles.push({ key, turn: s.turn, date: dateLabel(s.turn), title, who, msg, next });
+  W.newMiles = W.newMiles || [];
+  W.newMiles.push(W.miles[W.miles.length - 1]);
+  return true;
+}
+
+function checkMilestones(s, W, R) {
+  const h = s.history;
+  if (R.op > 0) milestone(W, s, 'first-op', '첫 흑자', 'han',
+    `${money(R.op)}. 작은 숫자인데, 부호가 바뀐 겁니다. 이 회사에서 부호가 바뀌는 건 처음입니다.`,
+    '다음은 누계를 흑자로 돌리는 겁니다.');
+  if (s.cum.op > 0) milestone(W, s, 'cum-op', '누계 영업이익 흑자 전환', 'han',
+    `부임 이후 합계가 ${money(s.cum.op)}입니다. 그동안 판 게 이제 남기 시작했습니다.`,
+    '여기서부터는 지키는 싸움입니다.');
+
+  // 재고 정상화 — 석 달 연속 적정 구간
+  const cov = W.coverHist.slice(-3);
+  if (cov.length === 3 && cov.every(c => c >= COVER.warn && c <= COVER.ok))
+    milestone(W, s, 'stock-ok', '재고 정상화', 'jung',
+      `석 달 연속 재고율 ${COVER.warn}~${COVER.ok}개월. 결품도 없고 창고도 안 넘칩니다.`,
+      '이 상태를 유지하는 게 제일 어렵습니다.');
+
+  // 납기 — 석 달 연속 100%
+  const last3 = h.slice(-3);
+  if (last3.length === 3 && last3.every(r => (r.shortRatio ?? 1) >= 0.999))
+    milestone(W, s, 'ontime', '납기 석 달 연속 완납', 'oh',
+      '석 달 동안 한 고객도 못 채운 적이 없습니다. 이건 운이 아니라 관리입니다.',
+      '단가 협상에서 이 기록을 쓰십시오.');
+
+  if (W.quality >= 88) milestone(W, s, 'qual-high', '품질 우수 수준 진입', 'oh',
+    `양품률 ${qualityPct(W.quality)}%. 고객사 감사에서 지적 나올 일이 거의 없습니다.`,
+    '협상에서 「품질로 설득」이 잘 먹힙니다.');
+
+  if (W.solar) milestone(W, s, 'solar', '태양광 가동', 'seo',
+    '지붕이 전기를 만들기 시작했습니다. 고지서가 처음으로 줄었어요.',
+    '아낀 돈은 매달 자동으로 들어옵니다.');
+
+  if ((s.lines || []).length > 2) milestone(W, s, 'expand', '설비 증설 가동', 'gu',
+    '새 라인이 돕니다. 이제 받을 수 있는 물량이 늘었심더.',
+    '늘어난 캐파만큼 소재도 더 걸어야 합니다.');
+
+  if (s.turn >= 12 && W.stats.breakdowns === 0) milestone(W, s, 'no-break', '1년 무고장', 'gu',
+    '1년 동안 라인이 한 번도 안 섰심더. 정비를 제때 한 값입니더.',
+    '이건 자랑해도 됩니더.');
+
+  if (s.trust >= 80) milestone(W, s, 'trust', '본사 신뢰 80 돌파', 'jung',
+    `본사 신뢰 ${Math.round(s.trust)}. 이제 본사가 먼저 물어봅니다.`,
+    '한도 협의도 수월해집니다.');
 }
