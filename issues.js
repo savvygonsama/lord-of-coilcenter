@@ -16,6 +16,11 @@ function worldIssues(s, W, G) {
   const hot = u3.filter(u => u > 0.9).length;
   const list = [];
   const add = (card, prio, force = false) => { if (card) list.push({ card, prio, force }); };
+  /* 부임 첫 결재. 아무것도 모르는 사람에게 일곱 건을 연달아 물으면 그건 결재가 아니라 시험이다.
+     첫 자리에는 반드시 지금 답해야 하는 것만 올린다 — 본사 연간 목표, 전임자가 남긴 재고,
+     그리고 소재 발주. 영업 자원 배분·집중 프로젝트·단가 협상은 회사를 한 분기 굴려보고
+     다음 결재에서 묻는다. */
+  const first = !s.history.length;
   const since = id => s.turn - (G.seen[id] ?? -99);
   const month = (s.turn - 1) % 12;          // 0 = 1월
   const shares = Object.keys(CUST).filter(k => (s.custShare[k] || 0) > 0.06);
@@ -72,7 +77,7 @@ function worldIssues(s, W, G) {
   const urgency = k => ((W.pledge || {})[k] ? 100 : 0) + (W.threat[k] ? 50 : 0)
     + Math.min(40, s.turn - (G.seen['w-nego-' + k] ?? -40));
   due.sort((a, b) => urgency(b) - urgency(a));
-  const negoCap = (G.mpt || 1) > 1 ? 2 : 1;
+  const negoCap = first ? 0 : (G.mpt || 1) > 1 ? 2 : 1;
   for (const k of due.slice(0, negoCap)) add(negoCard(s, W, k, L), 74, true);
   /* 유통향 스팟 — 눌러보기 전에는 결과를 모른다. 이 게임에서 유일하게 즉시 판가름 나는 판이다. */
   if (s.turn > 3 && since('m-spot') > 5 && wChance(0.38)) add(spotBetCard(s, W, L), 56);
@@ -117,13 +122,15 @@ function worldIssues(s, W, G) {
 
   /* ---------- 이번 분기 집중 프로젝트 ----------
      분기에 하나. 진행 중이면 안 묻는다 — 벌인 일을 끝내기 전에 또 벌이지 않는다. */
-  if (!W.project && (G.mpt > 1 || month % 3 === 0) && since('proj-pick') >= 2)
+  if (!first && !W.project && (G.mpt > 1 || month % 3 === 0) && since('proj-pick') >= 2)
     add(projectPickCard(s, W), 86, true);
 
   /* ---------- 반기 영업 계획 ----------
      "어디에 힘을 쏟을까요"를 매달 물으면 그건 계획이 아니라 잡담이다.
      반기에 한 번, 영업 자원 100점을 고객군에 나누는 자리로 못 박는다. */
-  const planDue = s.turn === 1 || (G.mpt > 1 ? month === 0 || month === 6 : month === 0 || month === 6);
+  /* 부임 첫 결재에는 안 묻는다. 대신 한 번도 안 물어봤으면 두 번째 결재에서 바로 묻는다 —
+     반년을 전임자 배분으로 굴리게 두지는 않는다. */
+  const planDue = !first && (month === 0 || month === 6 || !G.seen['sales-plan']);
   if (planDue && since('sales-plan') >= 4) add(salesPlanCard(s, W), 88, true);
 
   /* ---------- 조용할 때 ---------- */
@@ -249,7 +256,7 @@ function hqAnnualCard(s, W, L) {
     return msg;
   };
   return {
-    id: 'w-hq-annual', who: 'jung', topic: 'hq',
+    id: 'w-hq-annual', who: 'jung', topic: 'hq', role: '영업 · 본사 대응',
     title: `${y + 1}년차 — 본사가 올해 소재 판매 목표를 내려보냈습니다`,
     text: `사장님, 올해 숫자 나왔습니다. 연 ${fmt(ask)}톤${y > 0 ? `. 작년보다 ${Math.round((HQ_GROWTH[y] - 1) * 100)}% 더 하라는 겁니다` : '입니다'}. `
         + `아침 회의에서 셋이 붙었습니다. 한 부장은 "${finance}" 구 공장장은 "${prod}" `
@@ -274,7 +281,7 @@ function hqMidCard(s, W) {
   const pace = W.hq.ytd / (W.hq.target * 0.5);
   const top2 = Object.keys(CUST).sort((a, b) => (s.custShare[b] || 0) - (s.custShare[a] || 0)).slice(0, 2);
   return {
-    id: 'w-hq-mid', who: 'jung', topic: 'hq',
+    id: 'w-hq-mid', who: 'jung', topic: 'hq', role: '영업 · 본사 대응',
     title: '본사가 하반기 물량 확대를 요청했습니다',
     text: `사장님, 상반기 ${Math.round(pace * 100)}% 페이스입니다. 아침에 본사 영업본부에서 직접 전화 왔습니다. `
         + `"하반기에 만회해 주십시오." 딱 그 한 문장이었습니다. ` +
@@ -317,6 +324,7 @@ function legacyCard(s, W) {
   const lot = s.invRaw.find(l => l.legacy);   // applyLegacy가 붙인 표식. 프렐류드에서 넘어온 다른 lot과 섞이면 안 된다
   if (!lot) return null;
   const val = lot.qty * s.market.pm;
+  const age = Math.max(1, s.turn - lot.arrivalTurn);
   const drop = (s, pct, msg, G, label, extra = {}) => {
     const i = s.invRaw.indexOf(lot); if (i >= 0) s.invRaw.splice(i, 1);
     const cash = val * pct; s.cash += cash;
@@ -325,6 +333,12 @@ function legacyCard(s, W) {
   };
   return {
     id: 'w-legacy', who: 'han', topic: 'legacy',
+    ctx: cashCtx(s, W).concat([
+      { kind: 'fact', label: '묵은 재고 나이', value: `${age}개월째`, warn: true,
+        note: `${CFG.DUMP_AGE_TURNS}개월 넘은 현물은 은행 담보에서도 빠집니다` },
+      { kind: 'est', label: '그냥 두면', value: '매달 열화 + 이자',
+        note: '상품성을 잃은 만큼은 나중에 한꺼번에 손실로 잡힙니다' },
+    ]),
     title: '전임 사장이 남긴 재고가 있습니다',
     text: (() => {
       const mo = Math.max(1, s.turn - lot.arrivalTurn);   // 이 lot이 창고에 선 지 몇 달
@@ -722,7 +736,7 @@ function negoCard(s, W, k, L) {
   ];
 
   return {
-    id: 'w-nego-' + k, who: 'jung', topic: 'price-' + k, ctx,
+    id: 'w-nego-' + k, who: 'jung', topic: 'price-' + k, ctx, role: '영업 · 단가 협상',
     title: `${cname(k)} ${cycle} 단가 협상입니다`,
     text: `사장님, ${c.name} ${cycle} 단가 협상 날입니다. 계약서상 이번 달에 다시 씁니다. `
         + `${ask > 0 ? `그쪽은 톤당 $${ask} 내려 달라고 나왔습니다. ` : `이번엔 그쪽이 인하 얘기를 못 꺼냈습니다. `}`
@@ -804,7 +818,7 @@ function spotBetCard(s, W, L) {
   });
 
   return {
-    id: 'm-spot', who: 'jung', topic: 'spot',
+    id: 'm-spot', who: 'jung', topic: 'spot', role: '영업 · 유통 스팟',
     title: `유통향 일반재 ${fmt(qty)}톤을 싸게 넘기겠답니다`,
     text: `사장님, 이건 지금 자리에서 답 주셔야 합니다. 유통향 일반재 ${fmt(qty)}톤을 시세보다 `
         + `${Math.round(disc * 100)}% 싸게 넘기겠답니다. 다 팔면 톤당 $${gainPerTon} 남습니다. `
@@ -840,7 +854,7 @@ function projectPickCard(s, W) {
         + ` (${W.projectLog.slice(-1)[0].name})` } : null,
   ];
   return {
-    id: 'proj-pick', who: 'han', topic: 'proj', ctx,
+    id: 'proj-pick', who: 'han', topic: 'proj', ctx, role: '관리 · 경영기획',
     title: '이번 분기에 뭘 붙잡고 갈까요',
     text: `사장님, 분기 하나에 하나씩만 제대로 하시죠. 세 가지를 동시에 하면 세 가지 다 안 됩니다. `
         + `${done ? `지금까지 ${done}건 했고요. ` : '부임하고 처음 거는 겁니다. '}`
@@ -920,6 +934,12 @@ function cashCard(s, W, run) {
       return `${CUST[worst]}에 깎아준 단가를 되돌리겠다고 했더니 물량을 빼겠답니다. 받아들였습니다.`; } });
   return {
     id: 'w-cash', who: 'han', topic: 'cash',
+    ctx: cashCtx(s, W).concat([
+      { kind: 'fact', label: '매출채권', value: money(ar), note: '대금은 2~4개월 뒤에 들어옵니다' },
+      { kind: 'fact', label: '다음 달 소재 대금', value: money(look(s).need * s.market.pm), warn: true },
+      worst ? { kind: 'fact', label: '제일 많이 깎아준 곳',
+        value: `${cname(worst)} −$${W.cut[worst]}/t` } : null,
+    ]),
     title: '현금이 바닥을 보입니다',
     text: `결론부터 말씀드리면, 현금과 은행 한도를 다 합쳐 ${run.toFixed(1)}개월치입니다. ${why ? `${why} 결정의 청구서가 지금 돌아오고 있습니다. ` : ''}`
         + `당장 부도는 아니지만, 한 달만 삐끗하면 소재 대금을 못 막습니다. 뭔가를 포기해야 합니다.`,
@@ -936,6 +956,13 @@ function limitCard(s, W, use) {
   const why = cause(W, s, ['overbuy', 'volume', 'expand', 'project', 'policy-ample']);
   return {
     id: 'w-limit', who: 'han', topic: 'cash',
+    ctx: cashCtx(s, W).concat([
+      { kind: 'fact', label: '한도 사용률', value: `${Math.round(use * 100)}%`, warn: use > 0.85,
+        note: '한도는 재고와 매출채권에 붙어 있어서 장사가 줄면 같이 줍니다' },
+      { kind: 'fact', label: '남은 여력 vs 한 달 소재 대금',
+        value: `${money(room)} vs ${money(look(s).need * s.market.pm)}`,
+        warn: room < look(s).need * s.market.pm },
+    ]),
     title: '은행 한도가 찹니다',
     text: `사장님, 재미없는 얘기 하나 하겠습니다. 한도 $${fmt(s.debt.limit / 1000)}k 중에 `
         + `$${fmt(s.debt.principal / 1000)}k를 썼습니다. ${Math.round(use * 100)}%입니다. 남은 게 $${fmt(room / 1000)}k인데, `
@@ -1179,7 +1206,7 @@ function volumeCard(s, W, k, L) {
   const u = W.utilHist.slice(-1)[0] || 0.8;
   const gu = u > 0.85 ? ` 구 공장장은 "지금 라인으로는 벅찹니더" 카는데, 그건 늘 하는 소립니다.` : '';
   return {
-    id: 'w-vol', who: 'jung', topic: 'vol',
+    id: 'w-vol', who: 'jung', topic: 'vol', role: '영업 · 수주',
     title: `${cname(k)}가 물량을 더 주겠답니다`,
     text: `사장님, 이거 큽니다! ${CUST[k]}가 물량을 ${Math.round(pct * 100)}% 더 주겠답니다. `
         + `조건은 다음 정기 단가 협상에서 톤당 $${cut}을 반영해 달라는 겁니다 — `
@@ -1219,7 +1246,7 @@ function volumeCard(s, W, k, L) {
 function projectCard(s, W, k, L) {
   const u = W.utilHist.slice(-1)[0] || 0.8;
   return {
-    id: 'w-proj', who: 'jung', topic: 'vol',
+    id: 'w-proj', who: 'jung', topic: 'vol', role: '영업 · 수주',
     title: `${cname(k)}가 신차 프로젝트를 맡기고 싶어 합니다`,
     text: `사장님, 이거 큽니다. ${CUST[k]} 구매팀장이 오늘 직접 전화했습니다. 신차 프로젝트 2년 물량, 우리한테 주고 싶답니다. `
         + `제가 삼 년 동안 그 사람 결혼식까지 갔습니다. 그게 오늘 돌아온 겁니다. `
@@ -1249,7 +1276,7 @@ function projectCard(s, W, k, L) {
 function churnCard(s, W, k) {
   const why = cause(W, s, ['hold', 'deny', 'claim', 'short', 'cutvol', 'drop'], k) || cause(W, s, ['breakdown', 'short']);
   return {
-    id: 'w-churn-' + k, who: 'jung', topic: 'cust',
+    id: 'w-churn-' + k, who: 'jung', topic: 'cust', role: '영업 · 고객 관리',
     title: `${cname(k)} 주문이 계속 줄고 있습니다`,
     text: `사장님, 이거 그냥 넘기면 안 됩니다. 석 달 연속으로 주문이 빠졌습니다. `
         + `${why ? `${why} 그 뒤로 전화 받는 목소리가 달라졌습니다. ` : ''}` +
@@ -1308,6 +1335,12 @@ function creditCard(s, W) {
   const risky = CFG.CUSTOMERS[k].bad > 0.005;
   return {
     id: 'w-credit', who: 'han', topic: 'credit',
+    ctx: cashCtx(s, W).concat([
+      { kind: 'fact', label: `${cname(k)} 월평균 판매량`, value: `${fmt(Math.round(custAvgTons(s)[k] || 0))}t` },
+      { kind: risky ? 'fact' : 'est', label: '이 고객군 대금 이력',
+        value: risky ? '업계에 밀린 이력이 있음' : '제때 줌', warn: risky,
+        note: risky ? '올려주면 6개월 뒤 대손 확률이 40%입니다' : null },
+    ]),
     title: `${cname(k)}가 여신 한도를 올려달랍니다`,
     text: `지금 한도로는 더 못 받겠답니다. 번역하면 "물건은 더 받을 테니 돈은 나중에 주겠다"입니다. `
         + `올려주면 물량이 늘고 안 올려주면 줄어듭니다. 그건 확실합니다. `
