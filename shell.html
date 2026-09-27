@@ -691,3 +691,183 @@
   .perf td span.neu{color:var(--dim)}
   .brief-take .bubble{max-width:none;font-size:16px;line-height:1.7}
 </style>
+<style>
+/* ============================================================
+   폰 레이아웃.
+
+   데스크톱 화면을 그대로 줄여 놓으면 폰에서 한 판을 볼 수가 없다.
+   실측해 보니 결재 전 메인 화면이 4,100px — 폰 다섯 화면 분량이고,
+   「결재 시작」 버튼에 닿으려면 세 번을 쓸어 올려야 했다.
+
+   폰에서는 세 가지를 다르게 한다.
+     1. 글자와 여백을 손가락 크기에 맞춘다 (제목은 작게, 누르는 건 크게)
+     2. 「결재 시작」을 화면 아래에 고정한다 — 언제든 한 번에 닿는다
+     3. 표는 가로로 줄이지 않고 가로 스크롤하거나 줄 단위로 접는다
+   ============================================================ */
+@media (max-width: 620px) {
+
+  /* ---------- 전체 밀도 ---------- */
+  body { font-size: 15px; }
+  .wrap { padding: 10px 12px 96px; }        /* 아래는 고정 버튼 자리 */
+  .card { padding: 12px 13px; margin-bottom: 11px; }
+  h1 { font-size: 21px; line-height: 1.3; }
+  h2 { font-size: 15.5px; }
+  .h3 { font-size: 13px; margin: 10px 0 5px; }
+  .sep { margin: 10px 0; }
+  .hint { font-size: 12px; line-height: 1.55; }
+
+  /* ---------- 상단바 — 한 줄로 ---------- */
+  .topbar { padding: 6px 9px; gap: 5px; flex-wrap: wrap; font-size: 12.5px; line-height: 1.35; }
+  .topbar b { font-size: 14px; }
+  .topbar .mini { padding: 4px 8px; font-size: 11.5px; }
+  .topbar #btn-motion { order: 9; }
+
+  /* ---------- 연차 배너 — 두 줄로 줄인다 ---------- */
+  .yearban { padding: 11px 13px; }
+  .yearban b { font-size: 16px; }
+  .yearban p { font-size: 13px; line-height: 1.5; }
+  .yearban .sub { font-size: 11.5px; }
+
+  /* ---------- 목표 · 긴급 ---------- */
+  .goalrow { gap: 8px; }
+  .gbox { flex: 1 1 100%; padding: 8px 10px; }
+  .gbox .gv { font-size: 19px; }
+  .gbox .gl, .gbox .gn { font-size: 11px; }
+  .urg .warn { padding: 5px 0; }
+  .urg .warn span { font-size: 13px; line-height: 1.45; }
+
+  /* ---------- 핵심 지표 — 2열 ---------- */
+  .kpis { grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 11px; }
+  .kpi { padding: 7px 9px; border-left-width: 5px !important; }
+  .kpi .kl { font-size: 10.5px; }
+  .kpi .kv { font-size: 17px; }
+  .kpi .ks { font-size: 10px; line-height: 1.35; }
+
+  /* ---------- 지난 결과 ---------- */
+  .card.tops .top b { font-size: 13.5px; }
+  .card.tops .top span { font-size: 11.5px; }
+  .fx span { font-size: 11.5px; padding: 1px 6px; }
+
+  /* ---------- 진행 중 프로젝트 ---------- */
+  .prow { font-size: 12.5px; gap: 4px 10px; }
+  .prow b { font-size: 16px; }
+  .prow .ps { margin-left: 0; width: 100%; }
+  .pwhy { font-size: 11.5px; }
+
+  /* ---------- 「결재 시작」을 화면 아래 고정 ----------
+     폰에서 제일 많이 누르는 버튼이 스크롤 세 번 아래에 있으면 안 된다. */
+  .center { margin: 4px 0 8px !important; }
+  .center .hint { display: none; }
+  #go {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 41;
+    width: auto; padding: 15px 0; font-size: 17px;
+    box-shadow: 0 4px 0 var(--ink), 0 8px 18px rgba(0,0,0,.28);
+  }
+  /* 고정 버튼 뒤로 화면이 비쳐 보이면 지저분하다. 띠를 깔아 분리한다.
+     결재 팝업이 떠 있는 동안에는 버튼도 띠도 감춘다 — 팝업 위에 뜨면 그냥 방해물이다. */
+  body:has(#go)::after {
+    content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: 86px; z-index: 40;
+    background: linear-gradient(to top, var(--bg) 58%, transparent);
+    pointer-events: none;
+  }
+  body:has(dialog[open])::after { display: none; }
+  body:has(dialog[open]) #go { display: none; }
+
+  /* ---------- 접는 상세 ---------- */
+  details.fold > summary { padding: 11px 12px; font-size: 13.5px; }
+  details.fold > *:not(summary) { margin-left: 5px; margin-right: 5px; }
+
+  /* ---------- 표 — 줄이지 말고 밀어서 본다 ---------- */
+  .card table, .metrics table, .perf table { font-size: 12px; }
+  .metrics, .perf { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .metrics table, .perf table { min-width: 460px; }
+  .metrics th, .metrics td, .perf th, .perf td { padding: 4px 5px; white-space: nowrap; }
+
+  /* ---------- 고객 구성 — 한 줄에 다 넣지 않는다 ---------- */
+  .custbar {
+    grid-template-columns: 1fr auto auto;
+    gap: 3px 8px; padding: 9px 0; font-size: 13px;
+  }
+  .custbar > span:first-child { grid-column: 1 / -1; font-weight: 800; }
+  .custbar .track { grid-column: 1 / -1; height: 12px; }
+  .custbar .leak { grid-column: 1 / -1; text-align: left; margin-top: 2px; white-space: normal; }
+
+  /* ---------- 결재 팝업 — 전체 화면 ---------- */
+  dialog.deck { width: 100%; max-width: 100%; margin: 0; border-width: 0; }
+  dialog.deck .dlg { border-radius: 0; padding: 0 0 14px; }
+  .deckhead { padding: 9px 12px; font-size: 12px; position: sticky; top: 0; z-index: 5; }
+  .crew { padding: 0; }
+  .crew-pic img { width: 92px; height: 92px; }
+  .crew-body .line { font-size: 14.5px; line-height: 1.65; padding: 11px 12px; }
+  .deckq { padding: 0 12px; }
+  .deckq h2 { font-size: 17px; line-height: 1.35; }
+  .optlist { padding: 0 12px; gap: 9px; }
+  .optlist button { padding: 12px 13px; }
+  .optlist button b { font-size: 15.5px; line-height: 1.35; }
+  .optlist button .why { font-size: 12px; }
+  .ctxs { margin: 0 12px 11px; padding: 9px 10px; gap: 4px; }
+  .ctx { grid-template-columns: 38px 1fr; font-size: 12px; }
+  .ctx .cv { grid-column: 2; justify-self: start; }
+  .ctx .cn { font-size: 11px; }
+  .minis { margin: 10px 12px 0; }
+  .verdict.inline { margin: 12px 12px 0; }
+  .vchoice { font-size: 20px; line-height: 1.3; }
+  .vmsg { font-size: 14.5px; line-height: 1.65; }
+  .vfoot { padding: 12px; }
+  .vfoot .primary, .ok .primary { width: 100%; padding: 14px 0; font-size: 16px; }
+
+  /* ---------- 발주 표 — 고객군마다 한 장 ----------
+     여덟 칸짜리 표를 폰에 밀어 넣으면 숫자가 서로 붙어 못 읽는다.
+     줄을 카드로 풀고, 사장이 손대는 입력칸만 크게 남긴다. */
+  .ordwrap { padding: 0 12px; }
+  .ordt:not(.fct) { display: block; width: 100%; }
+  .ordt:not(.fct) tbody { display: block; width: 100%; }
+  .ordt:not(.fct) tr { display: block; width: 100%; box-sizing: border-box;
+    border: 2px solid var(--ink); background: var(--panel);
+    margin-bottom: 9px; padding: 9px 10px; }
+  .ordt:not(.fct) tr:first-child { display: none; }          /* 헤더 행은 감춘다 */
+  .ordt:not(.fct) td { display: flex; justify-content: space-between; align-items: center;
+    border: 0; border-bottom: 1px dashed var(--line); padding: 5px 0; text-align: right;
+    font-size: 13px; white-space: normal; }
+  .ordt:not(.fct) td:last-child { border-bottom: 0; padding-top: 9px; }
+  .ordt:not(.fct) td::before { content: attr(data-l); color: var(--dim);
+    font-weight: 800; font-size: 11.5px; text-align: left; }
+  .ordt:not(.fct) td.oname { display: block; text-align: left; font-size: 15px;
+    border-bottom: 2px solid var(--ink); padding-bottom: 6px; margin-bottom: 3px; }
+  .ordt:not(.fct) td.oname::before { content: none; }
+  .ordt:not(.fct) input { width: 118px; padding: 9px 8px; font-size: 16px; }
+  .ordbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .obtns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .obtns .mini { padding: 9px 4px; font-size: 12.5px; }
+  .osum { font-size: 15px; }
+  /* 예측표는 가로로 민다 — 달이 줄줄이 있어야 흐름이 보인다 */
+  .ofc { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .ordt.fct { min-width: 420px; }
+  .fcnote { font-size: 11.5px; gap: 5px 10px; }
+  #osubmit, #ssubmit { width: 100%; padding: 15px 0; font-size: 16px; margin-top: 10px; }
+
+  /* ---------- 결산 ---------- */
+  .rhead { grid-template-columns: 1fr 1fr; gap: 7px; }
+  .rbox { padding: 7px 9px; }
+  .rbox .rv { font-size: 17px; }
+  .rbox .rl, .rbox .rn { font-size: 10.5px; }
+  .rc { font-size: 12.5px; }
+  .rrisk { font-size: 12.5px; padding: 7px 10px; }
+  .mile { padding: 10px 11px; }
+  .mile p { font-size: 13.5px; }
+
+  /* ---------- 공장 그림 ---------- */
+  .marks { gap: 5px; }
+  .mk { font-size: 11px; padding: 2px 6px; }
+}
+
+/* 아주 좁은 폰 (아이폰 SE 등) */
+/* 아주 좁은 폰(아이폰 SE 375px)에서도 지표는 2열을 유지한다.
+   1열로 풀면 다섯 칸이 434px을 먹어 첫 화면이 지표만으로 차 버린다. */
+@media (max-width: 340px) {
+  .kpis { grid-template-columns: 1fr; }
+  .kpi .kv { font-size: 19px; }
+  h1 { font-size: 19px; }
+  .crew-pic img { width: 76px; height: 76px; }
+}
+</style>

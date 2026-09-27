@@ -691,6 +691,186 @@
   .perf td span.neu{color:var(--dim)}
   .brief-take .bubble{max-width:none;font-size:16px;line-height:1.7}
 </style>
+<style>
+/* ============================================================
+   폰 레이아웃.
+
+   데스크톱 화면을 그대로 줄여 놓으면 폰에서 한 판을 볼 수가 없다.
+   실측해 보니 결재 전 메인 화면이 4,100px — 폰 다섯 화면 분량이고,
+   「결재 시작」 버튼에 닿으려면 세 번을 쓸어 올려야 했다.
+
+   폰에서는 세 가지를 다르게 한다.
+     1. 글자와 여백을 손가락 크기에 맞춘다 (제목은 작게, 누르는 건 크게)
+     2. 「결재 시작」을 화면 아래에 고정한다 — 언제든 한 번에 닿는다
+     3. 표는 가로로 줄이지 않고 가로 스크롤하거나 줄 단위로 접는다
+   ============================================================ */
+@media (max-width: 620px) {
+
+  /* ---------- 전체 밀도 ---------- */
+  body { font-size: 15px; }
+  .wrap { padding: 10px 12px 96px; }        /* 아래는 고정 버튼 자리 */
+  .card { padding: 12px 13px; margin-bottom: 11px; }
+  h1 { font-size: 21px; line-height: 1.3; }
+  h2 { font-size: 15.5px; }
+  .h3 { font-size: 13px; margin: 10px 0 5px; }
+  .sep { margin: 10px 0; }
+  .hint { font-size: 12px; line-height: 1.55; }
+
+  /* ---------- 상단바 — 한 줄로 ---------- */
+  .topbar { padding: 6px 9px; gap: 5px; flex-wrap: wrap; font-size: 12.5px; line-height: 1.35; }
+  .topbar b { font-size: 14px; }
+  .topbar .mini { padding: 4px 8px; font-size: 11.5px; }
+  .topbar #btn-motion { order: 9; }
+
+  /* ---------- 연차 배너 — 두 줄로 줄인다 ---------- */
+  .yearban { padding: 11px 13px; }
+  .yearban b { font-size: 16px; }
+  .yearban p { font-size: 13px; line-height: 1.5; }
+  .yearban .sub { font-size: 11.5px; }
+
+  /* ---------- 목표 · 긴급 ---------- */
+  .goalrow { gap: 8px; }
+  .gbox { flex: 1 1 100%; padding: 8px 10px; }
+  .gbox .gv { font-size: 19px; }
+  .gbox .gl, .gbox .gn { font-size: 11px; }
+  .urg .warn { padding: 5px 0; }
+  .urg .warn span { font-size: 13px; line-height: 1.45; }
+
+  /* ---------- 핵심 지표 — 2열 ---------- */
+  .kpis { grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 11px; }
+  .kpi { padding: 7px 9px; border-left-width: 5px !important; }
+  .kpi .kl { font-size: 10.5px; }
+  .kpi .kv { font-size: 17px; }
+  .kpi .ks { font-size: 10px; line-height: 1.35; }
+
+  /* ---------- 지난 결과 ---------- */
+  .card.tops .top b { font-size: 13.5px; }
+  .card.tops .top span { font-size: 11.5px; }
+  .fx span { font-size: 11.5px; padding: 1px 6px; }
+
+  /* ---------- 진행 중 프로젝트 ---------- */
+  .prow { font-size: 12.5px; gap: 4px 10px; }
+  .prow b { font-size: 16px; }
+  .prow .ps { margin-left: 0; width: 100%; }
+  .pwhy { font-size: 11.5px; }
+
+  /* ---------- 「결재 시작」을 화면 아래 고정 ----------
+     폰에서 제일 많이 누르는 버튼이 스크롤 세 번 아래에 있으면 안 된다. */
+  .center { margin: 4px 0 8px !important; }
+  .center .hint { display: none; }
+  #go {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 41;
+    width: auto; padding: 15px 0; font-size: 17px;
+    box-shadow: 0 4px 0 var(--ink), 0 8px 18px rgba(0,0,0,.28);
+  }
+  /* 고정 버튼 뒤로 화면이 비쳐 보이면 지저분하다. 띠를 깔아 분리한다.
+     결재 팝업이 떠 있는 동안에는 버튼도 띠도 감춘다 — 팝업 위에 뜨면 그냥 방해물이다. */
+  body:has(#go)::after {
+    content: ''; position: fixed; left: 0; right: 0; bottom: 0; height: 86px; z-index: 40;
+    background: linear-gradient(to top, var(--bg) 58%, transparent);
+    pointer-events: none;
+  }
+  body:has(dialog[open])::after { display: none; }
+  body:has(dialog[open]) #go { display: none; }
+
+  /* ---------- 접는 상세 ---------- */
+  details.fold > summary { padding: 11px 12px; font-size: 13.5px; }
+  details.fold > *:not(summary) { margin-left: 5px; margin-right: 5px; }
+
+  /* ---------- 표 — 줄이지 말고 밀어서 본다 ---------- */
+  .card table, .metrics table, .perf table { font-size: 12px; }
+  .metrics, .perf { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .metrics table, .perf table { min-width: 460px; }
+  .metrics th, .metrics td, .perf th, .perf td { padding: 4px 5px; white-space: nowrap; }
+
+  /* ---------- 고객 구성 — 한 줄에 다 넣지 않는다 ---------- */
+  .custbar {
+    grid-template-columns: 1fr auto auto;
+    gap: 3px 8px; padding: 9px 0; font-size: 13px;
+  }
+  .custbar > span:first-child { grid-column: 1 / -1; font-weight: 800; }
+  .custbar .track { grid-column: 1 / -1; height: 12px; }
+  .custbar .leak { grid-column: 1 / -1; text-align: left; margin-top: 2px; white-space: normal; }
+
+  /* ---------- 결재 팝업 — 전체 화면 ---------- */
+  dialog.deck { width: 100%; max-width: 100%; margin: 0; border-width: 0; }
+  dialog.deck .dlg { border-radius: 0; padding: 0 0 14px; }
+  .deckhead { padding: 9px 12px; font-size: 12px; position: sticky; top: 0; z-index: 5; }
+  .crew { padding: 0; }
+  .crew-pic img { width: 92px; height: 92px; }
+  .crew-body .line { font-size: 14.5px; line-height: 1.65; padding: 11px 12px; }
+  .deckq { padding: 0 12px; }
+  .deckq h2 { font-size: 17px; line-height: 1.35; }
+  .optlist { padding: 0 12px; gap: 9px; }
+  .optlist button { padding: 12px 13px; }
+  .optlist button b { font-size: 15.5px; line-height: 1.35; }
+  .optlist button .why { font-size: 12px; }
+  .ctxs { margin: 0 12px 11px; padding: 9px 10px; gap: 4px; }
+  .ctx { grid-template-columns: 38px 1fr; font-size: 12px; }
+  .ctx .cv { grid-column: 2; justify-self: start; }
+  .ctx .cn { font-size: 11px; }
+  .minis { margin: 10px 12px 0; }
+  .verdict.inline { margin: 12px 12px 0; }
+  .vchoice { font-size: 20px; line-height: 1.3; }
+  .vmsg { font-size: 14.5px; line-height: 1.65; }
+  .vfoot { padding: 12px; }
+  .vfoot .primary, .ok .primary { width: 100%; padding: 14px 0; font-size: 16px; }
+
+  /* ---------- 발주 표 — 고객군마다 한 장 ----------
+     여덟 칸짜리 표를 폰에 밀어 넣으면 숫자가 서로 붙어 못 읽는다.
+     줄을 카드로 풀고, 사장이 손대는 입력칸만 크게 남긴다. */
+  .ordwrap { padding: 0 12px; }
+  .ordt:not(.fct) { display: block; width: 100%; }
+  .ordt:not(.fct) tbody { display: block; width: 100%; }
+  .ordt:not(.fct) tr { display: block; width: 100%; box-sizing: border-box;
+    border: 2px solid var(--ink); background: var(--panel);
+    margin-bottom: 9px; padding: 9px 10px; }
+  .ordt:not(.fct) tr:first-child { display: none; }          /* 헤더 행은 감춘다 */
+  .ordt:not(.fct) td { display: flex; justify-content: space-between; align-items: center;
+    border: 0; border-bottom: 1px dashed var(--line); padding: 5px 0; text-align: right;
+    font-size: 13px; white-space: normal; }
+  .ordt:not(.fct) td:last-child { border-bottom: 0; padding-top: 9px; }
+  .ordt:not(.fct) td::before { content: attr(data-l); color: var(--dim);
+    font-weight: 800; font-size: 11.5px; text-align: left; }
+  .ordt:not(.fct) td.oname { display: block; text-align: left; font-size: 15px;
+    border-bottom: 2px solid var(--ink); padding-bottom: 6px; margin-bottom: 3px; }
+  .ordt:not(.fct) td.oname::before { content: none; }
+  .ordt:not(.fct) input { width: 118px; padding: 9px 8px; font-size: 16px; }
+  .ordbar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .obtns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .obtns .mini { padding: 9px 4px; font-size: 12.5px; }
+  .osum { font-size: 15px; }
+  /* 예측표는 가로로 민다 — 달이 줄줄이 있어야 흐름이 보인다 */
+  .ofc { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .ordt.fct { min-width: 420px; }
+  .fcnote { font-size: 11.5px; gap: 5px 10px; }
+  #osubmit, #ssubmit { width: 100%; padding: 15px 0; font-size: 16px; margin-top: 10px; }
+
+  /* ---------- 결산 ---------- */
+  .rhead { grid-template-columns: 1fr 1fr; gap: 7px; }
+  .rbox { padding: 7px 9px; }
+  .rbox .rv { font-size: 17px; }
+  .rbox .rl, .rbox .rn { font-size: 10.5px; }
+  .rc { font-size: 12.5px; }
+  .rrisk { font-size: 12.5px; padding: 7px 10px; }
+  .mile { padding: 10px 11px; }
+  .mile p { font-size: 13.5px; }
+
+  /* ---------- 공장 그림 ---------- */
+  .marks { gap: 5px; }
+  .mk { font-size: 11px; padding: 2px 6px; }
+}
+
+/* 아주 좁은 폰 (아이폰 SE 등) */
+/* 아주 좁은 폰(아이폰 SE 375px)에서도 지표는 2열을 유지한다.
+   1열로 풀면 다섯 칸이 434px을 먹어 첫 화면이 지표만으로 차 버린다. */
+@media (max-width: 340px) {
+  .kpis { grid-template-columns: 1fr; }
+  .kpi .kv { font-size: 19px; }
+  h1 { font-size: 19px; }
+  .crew-pic img { width: 76px; height: 76px; }
+}
+</style>
 <script>
 /* ============================================================
    코일센터 경영 시뮬레이터 · 경제 엔진
@@ -3973,10 +4153,15 @@ function negoCard(s, W, k, L) {
 
   /* 2) 동결 — 경쟁사 견적이 진짜면 값을 치른다. 약속을 해뒀다면 그걸 깨는 자리가 된다. */
   opts.push({
-    label: pledged ? '약속을 뒤집고 현행 단가로 동결한다' : '현행 단가 동결로 버틴다',
+    /* 인하 요구가 없는 자리인데 "동결로 버틴다 → 역시 떠보는 거였다"가 나오면 말이 안 된다.
+       그쪽이 아무 말도 안 꺼낸 해에는 그냥 현 조건으로 다시 쓰는 것이다. */
+    label: pledged ? '약속을 뒤집고 현행 단가로 동결한다'
+         : ask === 0 ? '현 조건 그대로 갱신한다' : '현행 단가 동결로 버틴다',
     hint: pledged ? '약속을 깬다 — 관계가 무너진다'
+        : ask === 0 ? '그쪽도 이번엔 조용하다'
         : I.threat ? '경쟁사 견적이 진짜다 — 위험하다' : '경쟁사 얘기는 떠보는 것 같다',
     fx: ['+단가 지킴', pledged ? `?${CUST[k]} 관계 급락 · 물량 큰 폭 이탈`
+       : ask === 0 ? '=서로 조용히 서명하고 끝'
        : I.threat ? `?${CUST[k]} 물량 ${Math.round(hold * 100)}% 이탈 위험` : `?${CUST[k]} 서운함`],
     apply: (st, G) => {
       styleAdd(W, 'cash');
@@ -4005,6 +4190,14 @@ function negoCard(s, W, k, L) {
         PART: '동결했습니다. 그쪽도 자기네 고객한테 눌리는 중이라 세게는 못 나옵니다.',
         HOME: '동결했습니다. 분기마다 오는 자리라 그쪽도 힘을 아끼는 눈치입니다. 석 달 뒤에 또 옵니다.',
       };
+      // 인하 요구 자체가 없었으면 "역시 떠보는 거였다"가 성립하지 않는다
+      if (ask === 0) {
+        W.rel[k] = wClamp(W.rel[k] + 4);
+        return close(`${CUST[k]} 현 조건 갱신`, 'hold-ok',
+          `현 조건 그대로 다시 썼습니다. 그쪽도 이번엔 아무 말 안 꺼냈습니다. `
+          + `이런 해가 제일 좋습니다. 서로 서명하고 밥 먹고 끝났습니다.`,
+          { rel: [[k, 4]] })(st, G);
+      }
       return close(`${CUST[k]} 동결 — 버팀`, 'hold-ok',
         HOLD_OK[k] || '동결했습니다. 역시 떠보는 거였습니다. 마진 그대로 갑니다.',
         { rel: [[k, -2]] })(st, G);
@@ -5491,15 +5684,17 @@ function openDecisions() {
               <th class="capby">권장<br>막힌 곳</th>
               <th>${card.months > 1 ? '분기 발주 (톤)' : '발주 (톤)'}</th></tr>
           ${rows.map(r => `<tr>
+            <!-- data-l은 폰에서 쓴다. 좁은 화면에서는 표가 고객군마다 한 장으로 풀리고,
+                 그때 각 칸 왼쪽에 이 이름이 붙는다(shell.html 폰 레이아웃). -->
             <td class="oname">${CUST[r.k]} <i>${CFG.CUSTOMERS[r.k].name}</i></td>
-            <td>${fmt(Math.round(r.use))}</td>
-            <td>${fmt(Math.round(r.oh))}</td>
-            <td>${fmt(Math.round(r.sea))}</td>
-            <td>${fmt(Math.round(r.prod))}</td>
-            <td class="${r.invM < COVER.warn ? 'dn' : ''}">${r.invM.toFixed(1)}</td>
-            <td>${r.resM.toFixed(1)}</td>
-            <td class="capby">${r.capBy}</td>
-            <td><input type="number" min="0" max="${r.max}" step="50" data-ok="${r.k}" value="${r.rec}"></td>
+            <td data-l="${card.months > 1 ? '분기 사용' : '월 사용'}">${fmt(Math.round(r.use))}</td>
+            <td data-l="창고 현물">${fmt(Math.round(r.oh))}</td>
+            <td data-l="해상 미착">${fmt(Math.round(r.sea))}</td>
+            <td data-l="본사 생산 중">${fmt(Math.round(r.prod))}</td>
+            <td data-l="재고율" class="${r.invM < COVER.warn ? 'dn' : ''}">${r.invM.toFixed(1)}개월</td>
+            <td data-l="재원율">${r.resM.toFixed(1)}개월</td>
+            <td data-l="권장이 막힌 곳" class="capby">${r.capBy}</td>
+            <td data-l="${card.months > 1 ? '분기 발주 (톤)' : '발주 (톤)'}"><input type="number" min="0" max="${r.max}" step="50" data-ok="${r.k}" value="${r.rec}"></td>
             </tr>`).join('')}
         </table>
         <div class="ordbar">
@@ -5570,11 +5765,11 @@ function openDecisions() {
               <th>지금</th><th>이번 반기 배분</th></tr>
           ${rows.map(r => `<tr data-sk="${r.k}" class="${r.cur > 0 ? '' : 'off'}">
             <td class="oname">${CUST[r.k]} <i>${CFG.CUSTOMERS[r.k].name}</i></td>
-            <td>${fmt(Math.round(r.avg))}t</td>
-            <td class="${relCls(r.rel)}">${relLabel(r.rel)}</td>
-            <td>${GROWLAB(r.grow)}</td>
-            <td>${r.cur}</td>
-            <td><input type="number" min="0" max="100" step="5" data-sk="${r.k}" value="${r.cur}"></td>
+            <td data-l="최근 월평균 판매량">${fmt(Math.round(r.avg))}t</td>
+            <td data-l="관계" class="${relCls(r.rel)}">${relLabel(r.rel)}</td>
+            <td data-l="물량 전망">${GROWLAB(r.grow)}</td>
+            <td data-l="지금 배분">${r.cur}점</td>
+            <td data-l="이번 반기 배분"><input type="number" min="0" max="100" step="5" data-sk="${r.k}" value="${r.cur}"></td>
             </tr>`).join('')}
         </table>
         <div class="ordbar">
@@ -5697,6 +5892,12 @@ function openDecisions() {
 /* 움직임 끄기. 이 게임의 중요한 정보는 전부 정지 화면의 글자와 숫자로 전달된다 —
    애니메이션은 장식이고, 끄고 싶은 사람은 끌 수 있어야 한다.
    OS에서 이미 "동작 줄이기"를 켠 사람에게는 물어보지 않고 꺼진다(shell.html의 미디어 쿼리). */
+/* 폰인가. 폰에서는 기본으로 펼쳐두는 칸을 접는다 —
+   데스크톱에서 한눈에 들어오는 부서 보고가 폰에서는 1,900px짜리 벽이 된다. */
+function isPhone() {
+  return typeof window !== 'undefined' && window.innerWidth <= 620;
+}
+
 const MOTION_KEY = 'coilcenter.motion.off';
 function motionOff() {
   try { return localStorage.getItem(MOTION_KEY) === '1'; } catch (e) { return false; }
@@ -6780,7 +6981,7 @@ function renderPlay() {
         안건마다 판단에 필요한 숫자가 같이 올라옵니다.</p>
     </div>
 
-    <details class="fold" open><summary>부서 보고와 경고</summary>
+    <details class="fold" ${isPhone() ? '' : 'open'}><summary>부서 보고와 경고</summary>
       ${briefPanel(s, G.W)}
       ${firedPanel(G.W)}
       <div class="grid g2">${impactPanel(G.W) || ''}${warnPanel(s, G.W) || ''}</div>

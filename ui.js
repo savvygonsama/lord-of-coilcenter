@@ -344,15 +344,17 @@ function openDecisions() {
               <th class="capby">권장<br>막힌 곳</th>
               <th>${card.months > 1 ? '분기 발주 (톤)' : '발주 (톤)'}</th></tr>
           ${rows.map(r => `<tr>
+            <!-- data-l은 폰에서 쓴다. 좁은 화면에서는 표가 고객군마다 한 장으로 풀리고,
+                 그때 각 칸 왼쪽에 이 이름이 붙는다(shell.html 폰 레이아웃). -->
             <td class="oname">${CUST[r.k]} <i>${CFG.CUSTOMERS[r.k].name}</i></td>
-            <td>${fmt(Math.round(r.use))}</td>
-            <td>${fmt(Math.round(r.oh))}</td>
-            <td>${fmt(Math.round(r.sea))}</td>
-            <td>${fmt(Math.round(r.prod))}</td>
-            <td class="${r.invM < COVER.warn ? 'dn' : ''}">${r.invM.toFixed(1)}</td>
-            <td>${r.resM.toFixed(1)}</td>
-            <td class="capby">${r.capBy}</td>
-            <td><input type="number" min="0" max="${r.max}" step="50" data-ok="${r.k}" value="${r.rec}"></td>
+            <td data-l="${card.months > 1 ? '분기 사용' : '월 사용'}">${fmt(Math.round(r.use))}</td>
+            <td data-l="창고 현물">${fmt(Math.round(r.oh))}</td>
+            <td data-l="해상 미착">${fmt(Math.round(r.sea))}</td>
+            <td data-l="본사 생산 중">${fmt(Math.round(r.prod))}</td>
+            <td data-l="재고율" class="${r.invM < COVER.warn ? 'dn' : ''}">${r.invM.toFixed(1)}개월</td>
+            <td data-l="재원율">${r.resM.toFixed(1)}개월</td>
+            <td data-l="권장이 막힌 곳" class="capby">${r.capBy}</td>
+            <td data-l="${card.months > 1 ? '분기 발주 (톤)' : '발주 (톤)'}"><input type="number" min="0" max="${r.max}" step="50" data-ok="${r.k}" value="${r.rec}"></td>
             </tr>`).join('')}
         </table>
         <div class="ordbar">
@@ -423,11 +425,11 @@ function openDecisions() {
               <th>지금</th><th>이번 반기 배분</th></tr>
           ${rows.map(r => `<tr data-sk="${r.k}" class="${r.cur > 0 ? '' : 'off'}">
             <td class="oname">${CUST[r.k]} <i>${CFG.CUSTOMERS[r.k].name}</i></td>
-            <td>${fmt(Math.round(r.avg))}t</td>
-            <td class="${relCls(r.rel)}">${relLabel(r.rel)}</td>
-            <td>${GROWLAB(r.grow)}</td>
-            <td>${r.cur}</td>
-            <td><input type="number" min="0" max="100" step="5" data-sk="${r.k}" value="${r.cur}"></td>
+            <td data-l="최근 월평균 판매량">${fmt(Math.round(r.avg))}t</td>
+            <td data-l="관계" class="${relCls(r.rel)}">${relLabel(r.rel)}</td>
+            <td data-l="물량 전망">${GROWLAB(r.grow)}</td>
+            <td data-l="지금 배분">${r.cur}점</td>
+            <td data-l="이번 반기 배분"><input type="number" min="0" max="100" step="5" data-sk="${r.k}" value="${r.cur}"></td>
             </tr>`).join('')}
         </table>
         <div class="ordbar">
@@ -550,6 +552,12 @@ function openDecisions() {
 /* 움직임 끄기. 이 게임의 중요한 정보는 전부 정지 화면의 글자와 숫자로 전달된다 —
    애니메이션은 장식이고, 끄고 싶은 사람은 끌 수 있어야 한다.
    OS에서 이미 "동작 줄이기"를 켠 사람에게는 물어보지 않고 꺼진다(shell.html의 미디어 쿼리). */
+/* 폰인가. 폰에서는 기본으로 펼쳐두는 칸을 접는다 —
+   데스크톱에서 한눈에 들어오는 부서 보고가 폰에서는 1,900px짜리 벽이 된다. */
+function isPhone() {
+  return typeof window !== 'undefined' && window.innerWidth <= 620;
+}
+
 const MOTION_KEY = 'coilcenter.motion.off';
 function motionOff() {
   try { return localStorage.getItem(MOTION_KEY) === '1'; } catch (e) { return false; }
@@ -1633,7 +1641,7 @@ function renderPlay() {
         안건마다 판단에 필요한 숫자가 같이 올라옵니다.</p>
     </div>
 
-    <details class="fold" open><summary>부서 보고와 경고</summary>
+    <details class="fold" ${isPhone() ? '' : 'open'}><summary>부서 보고와 경고</summary>
       ${briefPanel(s, G.W)}
       ${firedPanel(G.W)}
       <div class="grid g2">${impactPanel(G.W) || ''}${warnPanel(s, G.W) || ''}</div>
