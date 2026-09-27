@@ -319,14 +319,16 @@ function openDecisions() {
           <tr><td class="oname">재고율(개월)</td>${f.rows.map(r => `<td>${r.coverM.toFixed(1)}</td>`).join('')}</tr>
         </table>
         <div class="fcnote">
-          <span class="${f.over ? 'dn' : 'up'}">야드 최대 ${Math.round(f.peakYard * 100)}%${f.over ? ' · 한도 초과' : ''}</span>
+          <span class="${f.over ? 'dn' : 'up'}">월말 야드 최대 ${Math.round(f.peakYard * 100)}%${f.over ? ' · 한도 초과' : ''}</span>
           <span class="${f.shortMonths ? 'dn' : 'up'}">결품 ${f.shortMonths ? f.shortMonths + '개월' : '없음'}</span>
           <span>소재 대금 ${money(f.cashTie)} · ${CFG.DPO_TURNS}개월 뒤 결제</span>
         </div>
         <div class="fcnote alt">
           <span>수요 +20%면 야드 ${Math.round(up.peakYard * 100)}% · 결품 ${up.shortMonths}개월</span>
           <span>입고 1개월 지연이면 결품 ${late.shortMonths}개월</span>
-          <span class="est">추정치입니다. 확정 결과가 아닙니다.</span>
+          <span class="est">추정치입니다. 확정 결과가 아닙니다 —
+            <b>다음 결재의 신규 발주는 넣지 않은 값</b>이라 마지막 달 재고가 낮게 나옵니다.
+            야드 점유율은 <b>월말 기준</b>이고, 입고 직후 한때 이보다 높습니다.</span>
         </div>`;
     };
 
@@ -714,8 +716,11 @@ function salesPlanCard(s, W) {
       // 동률인데 "제일 세게"라고 하면 그 자리에서 거짓말이 된다
       const tied = sorted.filter(k => mix[k] === mix[top]);
       return `${on.map(k => `${CFG.CUSTOMERS[k].name} ${mix[k]}`).join(', ')}으로 짰습니다. `
-           + `${tied.length > 1 ? `${tied.map(k => CFG.CUSTOMERS[k].name).join('과 ')}에 같은 무게로 붙입니다. `
-                : top ? `${CFG.CUSTOMERS[top].name}에 제일 세게 붙입니다. ` : ''}`
+           + `${tied.length === on.length && on.length > 1
+                ? '다섯 군데에 똑같이 나눴습니다. 어디도 특별히 밀지 않는 배분입니다. '
+              : tied.length > 1
+                ? `${tied.map(k => CFG.CUSTOMERS[k].name).join('과 ')}에 같은 무게로 공동 1순위입니다. `
+              : top ? `${CFG.CUSTOMERS[top].name}에 제일 세게 붙입니다. ` : ''}`
            + `${off.length ? `${off.map(k => CFG.CUSTOMERS[k].name).join('·')}는 사실상 손 놓는 겁니다. 나중에 딴말 없기입니다. ` : '다섯 군데 다 챙기는 건 다섯 군데 다 대충 하는 거랑 비슷합니다만, 사장님 뜻대로 하겠습니다. '}`
            + `숫자는 ${when}부터 움직입니다.`;
     },
@@ -827,10 +832,14 @@ function orderRows(s, L) {
     const capBy = rec > capped + 1 ? '최소 발주선'
                 : rec >= base - 1 ? '소요·재원' : rec >= MAX - 1 ? '본사 압연 한도'
                 : rec >= yardRoom - 1 ? '야드 여유' : '재원 천장';
-    return { k, sh, use, oh, sea: se, prod: pr, inv, res, max: Math.round(MAX / 50) * 50,
+    /* 50톤 단위로 반올림할 때 권장량이 상한을 넘기면, 제출 화면에서 조용히 잘려
+       "적어낸 합계"와 "실제 나간 합계"가 달라진다. 상한은 올림, 권장량은 그 안으로 자른다. */
+    const maxR = Math.ceil(MAX / 50) * 50;
+    const recR = Math.min(maxR, Math.round(rec / 50) * 50);
+    return { k, sh, use, oh, sea: se, prod: pr, inv, res, max: maxR,
       invM: useM > 0 ? inv / useM : 0, resM: useM > 0 ? res / useM : 0,
       capBy, yardRoom: Math.round(yardRoom), useM,
-      rec: Math.round(rec / 50) * 50 };
+      rec: recR };
   }).filter(r => r.sh > 0.01);
 }
 
@@ -1356,10 +1365,39 @@ function projectPanel(s, W) {
       <span>${left > 0 ? `${left}개월 남음 · ${dateLabel(pr.end)} 판가름` : '이번 달 판가름'}</span>
       <span class="ps">${word}</span>
     </div>
+    ${pace < 0.85 && left > 0 ? `<div class="pwhy"><b>왜 뒤처지나</b> — ${projectDrag(s, W, pr)}</div>` : ''}
     <p class="hint">기준 ${fmtGoal(pr.key, pr.base)} → 목표 ${fmtGoal(pr.key, pr.goal)} ·
-      지금 ${fmtGoal(pr.key, PROJECTS[pr.key].now(s, W))}.
-      목표의 55%를 넘기면 부분 달성으로 봅니다.</p>
+      지금 ${fmtGoal(pr.key, PROJECTS[pr.key].now(s, W))}${
+        PROJECTS[pr.key].now(s, W) < pr.base ? ' <b class="v neg">(시작값보다 내려갔습니다)</b>' : ''}.
+      끝나는 달에 <b>100% 이상이면 성공</b>, <b>55% 이상이면 부분 달성</b>, 그 아래는 미달입니다.</p>
   </div>`;
+}
+
+/* 프로젝트가 왜 안 따라오는지 — 진행을 막고 있는 실제 상태를 짚는다.
+   "뒤처집니다"만 적어두고 이유를 안 말하면 플레이어가 할 수 있는 게 없다. */
+function projectDrag(s, W, pr) {
+  const util = W.utilHist.slice(-1)[0] ?? 0.8;
+  if (pr.key === 'quality') {
+    const why = [];
+    if (util > 0.9) why.push(`가동률 ${Math.round(util * 100)}% — 라인을 쉬지 않고 돌리면 표준작업이 안 붙습니다`);
+    if (W.fatigue > 45) why.push(`현장 피로 ${fatigueLabel(W.fatigue)} — 사람이 지치면 검사 공정이 먼저 생략됩니다`);
+    if (W.equip < 58) why.push(`설비 상태 ${equipLabel(W.equip)} — 기계가 낡으면 품질 목표치 자체가 안 올라갑니다`);
+    return why.length ? why.join(' · ')
+      : '눈에 띄는 걸림돌은 없습니다. 품질은 원래 천천히 올라갑니다.';
+  }
+  if (pr.key === 'newcust') {
+    const why = [];
+    if (util > 0.92) why.push(`가동률 ${Math.round(util * 100)}% — 물량을 따와도 만들 자리가 없습니다`);
+    if (s.trust < 60) why.push(`본사 신뢰 ${Math.round(s.trust)} — 본사가 밀어주는 물량이 줄고 있습니다`);
+    const lost = Object.keys(CUST).filter(k => W.rel[k] < 45);
+    if (lost.length) why.push(`${lost.map(k => CUST[k]).join('·')} 관계가 나빠 기존 물량이 빠지고 있습니다`);
+    return why.length ? why.join(' · ') : '신규 거래는 원래 막판에 몰려 열립니다.';
+  }
+  const n = stockNow(s);
+  const why = [];
+  if (n.invM > COVER.ok) why.push(`재고율 ${n.invM.toFixed(1)}개월 — 채권을 걷어도 재고가 늘면 운전자본은 그대로입니다`);
+  if ((s.ar || []).length > 8) why.push('밀린 채권이 여러 건 남아 있습니다');
+  return why.length ? why.join(' · ') : '순서대로 걷히고 있습니다.';
 }
 /* 목표를 사람이 읽는 단위로. 품질은 내부 지수를 그대로 쓴다 —
    양품률(%)로 바꾸면 +6이 +0.3%로 보여서 목표가 무의미해 보인다. */
@@ -2129,19 +2167,25 @@ function advance() {
 /* 결산 첫 화면에 올릴 것 — 이번 결과, 직전 대비, 핵심 원인 셋, 다음 위험 하나.
    원인은 실제로 장부에 찍힌 비용만 쓴다. 근거 없는 "이 결정이 얼마를 깎았다"를 지어내지 않는다.
    추정치는 따로 표시하고 합계에 섞지 않는다. */
-function reportCauses(R) {
-  const out = [];
-  const add = (label, amt, kind) => { if (Math.abs(amt) > 500) out.push({ label, amt, kind }); };
-  add('안 팔려서 반값 처분', -(R.dumpLoss || 0), 'fact');
-  add('오래 묵어 못 쓰게 된 것', -(R.degradeLoss || 0), 'fact');
-  add('현물 재고 평가손', -(R.valuationLoss || 0), 'fact');
-  add('대손', -(R.badDebt || 0), 'fact');
-  add('이자', -(R.interest || 0), 'fact');
-  add('스크랩 판매', R.scrapRevenue || 0, 'fact');
-  if (R.overTons > 0) out.push({ label: `야드 한도 ${fmt(Math.round(R.overTons))}t 초과 — 외부창고·가동 지연`,
-    amt: -(R.overTons * CFG.WAREHOUSE_OVER_COST), kind: 'fact' });
-  out.sort((a, b) => Math.abs(b.amt) - Math.abs(a.amt));
-  return out.slice(0, 3);
+/* 결산에 올릴 항목들.
+   영업이익 안에 들어가는 것과 그 아래(영업외)에 붙는 것을 섞으면 안 된다.
+   이자는 영업이익 다음에 빠지는 금융비용인데, 그걸 "영업이익을 만든 것"에 올리면
+   장부와 설명이 어긋난다.
+   그리고 이건 "이익 변동의 원인"이 아니라 그냥 "이번 기간의 큰 항목"이다.
+   전분기 대비 증감 기여도를 제대로 분해할 수 없으니 그렇게 단정하지 않는다. */
+function reportItems(R) {
+  const op = [], non = [];
+  const add = (arr, label, amt) => { if (Math.abs(amt) > 500) arr.push({ label, amt }); };
+  add(op, '안 팔려서 반값 처분', -(R.dumpLoss || 0));
+  add(op, '오래 묵어 못 쓰게 된 것', -(R.degradeLoss || 0));
+  add(op, '현물 재고 평가손', -(R.valuationLoss || 0));
+  add(op, '스크랩 판매', R.scrapRevenue || 0);
+  if (R.overTons > 0) add(op, `야드 한도 ${fmt(Math.round(R.overTons))}t 초과 — 외부창고비`,
+    -(R.overTons * CFG.WAREHOUSE_OVER_COST));
+  add(non, '이자 (영업외)', -(R.interest || 0));
+  add(non, '대손 (영업외)', -(R.badDebt || 0));
+  const bySize = (a, b) => Math.abs(b.amt) - Math.abs(a.amt);
+  return { op: op.sort(bySize).slice(0, 3), non: non.sort(bySize).slice(0, 2) };
 }
 
 /* 다음 기간에 제일 큰 위험 하나. 지금 숫자에서 바로 읽히는 것만 고른다. */
@@ -2163,16 +2207,29 @@ function showReport(R) {
   const dlg = document.createElement('dialog');
   const shipped = Object.values(R.shipped).reduce((a, b) => a + b, 0);
   const ordered = Object.values(R.demandAuto).reduce((a, b) => a + b, 0);
-  /* 월별 사건을 날짜순으로 정리하고 같은 경고는 묶는다.
-     한 분기에 같은 말이 세 번 나오면 그건 세 건이 아니라 한 건이 석 달 간 것이다. */
+  /* 월별 사건을 정리하고 같은 경고는 묶는다.
+     한 분기에 같은 말이 세 번 나오면 그건 세 건이 아니라 한 건이 석 달 간 것이다.
+
+     다만 숫자가 다른 사건을 같은 사건으로 묶으면 안 된다.
+     "소재 14,080톤 입고 · 3개월 연속"으로 접어버리면 실제로는 14,080 / 14,090 / 14,080인
+     월별 수량을 검증할 수 없다. 묶되 합계와 각 달의 값을 같이 남긴다. */
   const raw = [...(R.phaseChange ? [R.phaseChange] : []), ...R.flags, ...R.log];
   const seen = new Map();
   for (const t of raw) {
-    const key = String(t).replace(/[\d,]+/g, '#');
-    if (seen.has(key)) { seen.get(key).n++; if (!seen.get(key).all.includes(t)) seen.get(key).all.push(t); }
-    else seen.set(key, { text: t, n: 1, all: [t] });
+    const str = String(t);
+    const key = str.replace(/[\d,]+/g, '#');
+    const nums = (str.match(/[\d,]+/g) || []).map(x => +x.replace(/,/g, ''));
+    if (seen.has(key)) { const e = seen.get(key); e.n++; e.all.push(str); e.nums.push(nums); }
+    else seen.set(key, { text: str, n: 1, all: [str], nums: [nums], key });
   }
-  const lines = [...seen.values()];
+  const lines = [...seen.values()].map(e => {
+    if (e.n === 1) return e;
+    // 값이 달마다 다르면 합계를 만들어 준다 — 첫 숫자를 대표값으로 본다
+    const firsts = e.nums.map(a => a[0]).filter(v => Number.isFinite(v));
+    e.varies = new Set(firsts).size > 1;
+    e.sum = firsts.reduce((a, b) => a + b, 0);
+    return e;
+  });
 
   // 직전 기간 대비
   const mpt = R.months || 1;
@@ -2182,7 +2239,7 @@ function showReport(R) {
   const prev = full.length > mpt ? full.slice(-mpt * 2, -mpt) : [];
   const sum = (a, k) => a.reduce((x, r) => x + (r[k] || 0), 0);
   const dOp = prev.length ? R.op - sum(prev, 'op') : null;
-  const causes = reportCauses(R);
+  const items = reportItems(R);
   const risk = nextRisk(G.s, G.W);
 
   dlg.innerHTML = `<div class="dlg">
@@ -2207,9 +2264,13 @@ function showReport(R) {
       </div>
     </div>
 
-    ${causes.length ? `<div class="rcause"><h3 class="h3">이번 결과를 만든 것 (실제 장부 금액)</h3>
-      ${causes.map(c => `<div class="rc"><span>${c.label}</span>
+    ${(items.op.length || items.non.length) ? `<div class="rcause">
+      <h3 class="h3">이번 기간의 큰 항목 <span class="muted" style="font-size:11.5px;font-weight:600">실제 장부 금액입니다. 이익 증감의 원인 분해는 아닙니다.</span></h3>
+      ${items.op.map(c => `<div class="rc"><span>${c.label}</span>
         <b class="${c.amt < 0 ? 'v neg' : 'v pos'}">${c.amt < 0 ? '▼ −$' : '▲ +$'}${money1k(Math.abs(c.amt))}</b></div>`).join('')}
+      ${items.non.length ? `<div class="rc rcsep"><span class="muted">아래는 영업이익 다음에 빠집니다 — 순이익에만 영향</span><b></b></div>
+      ${items.non.map(c => `<div class="rc"><span>${c.label}</span>
+        <b class="${c.amt < 0 ? 'v neg' : 'v pos'}">${c.amt < 0 ? '▼ −$' : '▲ +$'}${money1k(Math.abs(c.amt))}</b></div>`).join('')}` : ''}
       </div>` : ''}
 
     ${/* 한 결산에 이정표를 셋씩 터뜨리면 축하가 아니라 소음이 된다.
@@ -2243,9 +2304,17 @@ function showReport(R) {
     </details>
     ${R.lineReady ? `<div class="note good">${R.lineReady}</div>` : ''}
     ${lines.length ? `<details class="fold"><summary>이 기간에 일어난 일 (${lines.length}건)</summary>
-      ${lines.map(x => `<div class="note ${/결품|넘겼|막혀|모자|대손|떠나|부도|클레임|넘어갔|나갔/.test(x.text) ? 'bad' : ''}">${
-        x.all.length > 1 ? x.all[x.all.length - 1] : x.text}${
-        x.n > 1 ? ` <span class="muted">· ${x.n}개월 연속</span>` : ''}</div>`).join('')}
+      ${lines.map(x => {
+        const bad = /결품|넘겼|막혀|모자|대손|떠나|부도|클레임|넘어갔|나갔/.test(x.text) ? 'bad' : '';
+        if (x.n === 1) return `<div class="note ${bad}">${x.text}</div>`;
+        // 묶음은 합계·횟수를 적고, 펼치면 달마다 실제 값이 나온다
+        const head = x.varies
+          ? `${x.text.replace(/[\d,]+/, fmt(x.sum))} <span class="muted">· ${x.n}개월 합계</span>`
+          : `${x.text} <span class="muted">· ${x.n}개월 연속</span>`;
+        return `<div class="note ${bad}"><details class="grp"><summary>${head}</summary>
+          ${x.all.map((t, i) => `<div class="gl"><i>${i + 1}번째 달</i>${t}</div>`).join('')}
+          </details></div>`;
+      }).join('')}
       </details>` : ''}
     <div class="ok"><button class="primary" id="close">확인</button></div></div>`;
   dlg.addEventListener('cancel', e => e.preventDefault());

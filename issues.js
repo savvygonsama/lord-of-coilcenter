@@ -689,20 +689,36 @@ function negoCard(s, W, k, L) {
      약속을 해둔 자리에서는 통하지 않는다. 그쪽은 실적 얘기를 들으러 온 게 아니다. */
   if (I.quality >= 68 && !pledged) opts.push({
     label: '품질·납기 실적을 들고 동결을 설득한다',
-    hint: `양품률 ${qualityPct(W.quality).toFixed(1)}% · 관계 ${relLabel(W.rel[k])}`,
-    fx: ['+통하면 단가 유지 · 관계 ↑', '?못 받쳐주면 물량 일부 이탈'],
+    /* 판정에 실제로 쓰는 값을 선택지 옆에 그대로 적는다.
+       품질 지수 72 이상, 관계 55 이상이라는 문턱을 넘어야 하고, 넘어도 4분의 1은 안 된다.
+       "관계가 부족했다"고만 말하면 뭘 고쳐야 하는지 알 수가 없다. */
+    hint: `판정 기준 — 품질 지수 ${Math.round(W.quality)}/72 · 관계 ${Math.round(W.rel[k])}/55`
+        + `${W.quality >= 72 && W.rel[k] >= 55 ? ' · 둘 다 통과, 그래도 75%' : ' · 문턱 미달'}`,
+    fx: [`+통하면 단가 유지 · 관계 ↑`,
+         W.quality >= 72 && W.rel[k] >= 55 ? '?문턱은 넘었지만 성공 확률 75%' : '?문턱을 못 넘어 거의 안 통합니다',
+         '?실패하면 물량 일부 이탈'],
     apply: (st, G) => {
-      const ok = W.quality >= 72 && W.rel[k] >= 55 && wChance(0.75);
+      const qOk = W.quality >= 72, rOk = W.rel[k] >= 55;
+      const roll = wChance(0.75);
+      const ok = qOk && rOk && roll;
       if (ok) {
         W.rel[k] = wClamp(W.rel[k] + 3); styleAdd(W, 'craft');
         return close(`${CUST[k]} 품질로 동결 설득 — 성공`, 'persuade',
           `불량률하고 납기 준수율 자료를 한 장씩 짚었습니다. 동결로 마무리했습니다. 이런 건 그날 만드는 게 아니라 평소에 쌓아두는 겁니다.`,
           { rel: [[k, 3]] })(st, G);
       }
+      // 왜 안 됐는지 실제 판정값으로 말한다
+      const why = !qOk && !rOk
+          ? `품질 지수 ${Math.round(W.quality)}(기준 72)에 관계도 ${relLabel(W.rel[k])}였습니다. 들고 갈 자료도, 들어줄 사람도 없었습니다.`
+        : !qOk
+          ? `품질 지수가 ${Math.round(W.quality)}입니다. 기준이 72인데 우리 불량률이 오히려 역공 자료가 됐습니다. 얼굴이 화끈했습니다.`
+        : !rOk
+          ? `자료는 좋았는데 관계가 ${relLabel(W.rel[k])}(${Math.round(W.rel[k])}점, 기준 55)이었습니다. 거기까지 관계가 못 받쳐줬습니다.`
+          : `자료도 관계도 기준은 넘었습니다. 그런데 그쪽 구매 본부가 이미 단가를 결재해 놓은 상태였습니다. `
+            + `이런 건 네 번에 한 번은 이렇게 됩니다. 제 잘못은 아닌데, 결과는 결과입니다.`;
       const v = growCust(st, k, -0.10); W.rel[k] = wClamp(W.rel[k] - 5);
       return close(`${CUST[k]} 품질로 동결 설득 — 실패`, 'hold',
-        `${W.quality < 72 ? '우리 불량률이 오히려 역공 자료가 됐습니다. 얼굴이 화끈했습니다.' : '거기까지 관계가 못 받쳐줬습니다.'} 물량 일부 빠졌습니다.`,
-        { vol: v, rel: [[k, -5]] })(st, G);
+        `${why} 물량 일부 빠졌습니다.`, { vol: v, rel: [[k, -5]] })(st, G);
     },
   });
 
@@ -715,9 +731,16 @@ function negoCard(s, W, k, L) {
     / Math.max(1, Object.values(lastR.demandAuto).reduce((a, b) => a + b, 0)) : 1;
   const ctx = [
     { kind: 'fact', label: `${cname(k)} 월평균 판매량`, value: `${fmt(Math.round(avgT))}t · 전체의 ${Math.round(I.sh * 100)}%` },
-    { kind: 'fact', label: '지금 나가는 양보 단가', value: nowCut > 0 ? `−$${nowCut}/t · 월 −$${money1k(nowCut * avgT)}` : '없음',
+    /* 단가는 깎아준 쪽(할인)과 올려 받은 쪽(프리미엄)이 있다. nowCut이 음수면 프리미엄이다.
+       부호를 그대로 붙이면 "−$-4/t"가 나온다. 말로 구분하고 부호는 한 번만 쓴다. */
+    { kind: 'fact', label: '기준 단가 대비 현재',
+      value: nowCut > 0 ? `할인 −$${nowCut}/t` : nowCut < 0 ? `프리미엄 +$${-nowCut}/t` : '기준 단가 그대로',
+      note: nowCut !== 0
+        ? `${cname(k)} 월 ${fmt(Math.round(avgT))}t 기준으로 월 이익 ${nowCut > 0 ? '−' : '+'}$${money1k(Math.abs(nowCut * avgT))}`
+        : null,
       warn: nowCut >= 8 },
-    { kind: 'fact', label: '가공마진 대비', value: `톤당 $${CFG.PROC_MARGIN.SLIT + CFG.COIL_MARGIN} 중 ${nowCut} 양보 중`,
+    { kind: 'fact', label: '가공마진 대비',
+      value: `톤당 $${CFG.PROC_MARGIN.SLIT + CFG.COIL_MARGIN} 중 ${nowCut > 0 ? `$${nowCut} 할인 중` : nowCut < 0 ? `$${-nowCut} 더 받는 중` : '양보 없음'}`,
       note: `여기서 $${ask} 더 내주면 남는 게 톤당 $${Math.max(0, CFG.PROC_MARGIN.SLIT + CFG.COIL_MARGIN - nowCut - ask)}입니다`,
       warn: nowCut + ask >= CFG.PROC_MARGIN.SLIT },
     // 품질은 화면마다 단위가 달라지면 안 된다. 현장 말로는 언제나 「양품률 %」,
@@ -865,7 +888,11 @@ function projectPickCard(s, W) {
     opts: opts.map(({ key, p, why, score }) => ({
       label: p.name,
       hint: score >= 3 ? '지금 이게 제일 급합니다' : score >= 1 ? '해둘 만합니다' : '지금은 급하지 않습니다',
-      fx: [`−${p.cost}`, `+목표 ${p.aim}`, `?${p.months}개월 뒤 판가름`,
+      /* 고르기 전에 시작값·목표값·판정 기준을 보여준다.
+         "+9%"만 적어두면 상대 증가인지 퍼센트포인트인지 알 수 없다. 실제 숫자로 적는다. */
+      fx: [`−${p.cost}`,
+           `+${p.aim} — 지금 ${fmtGoal(key, p.base(s, W))} → 목표 ${fmtGoal(key, p.goal(p.base(s, W)))}`,
+           `?${p.months}개월 뒤 판가름 · 100% 성공 / 55% 부분 달성`,
            score < 1 ? '?지금 상태에선 효과가 작습니다' : null].filter(Boolean),
       apply: (st, G) => {
         const pr = startProject(st, W, G, key);

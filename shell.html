@@ -578,6 +578,8 @@
   .prow{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13.5px;font-weight:700}
   .prow b{font-size:18px;font-variant-numeric:tabular-nums}
   .prow .ps{margin-left:auto;font-weight:800}
+  .pwhy{margin:8px 0 0;padding:7px 10px;background:var(--panel2);border-left:4px solid #b8860b;font-size:12.5px;font-weight:600}
+  .pwhy b{font-family:var(--px);font-size:11px;margin-right:5px}
   .p-good .prow .ps{color:var(--teal)} .p-warn .prow .ps{color:#8a6410} .p-bad .prow .ps{color:var(--rust)}
 
   /* 이정표 — 짧게, 그러나 눈에 띄게 */
@@ -614,6 +616,12 @@
   .rc{display:flex;justify-content:space-between;gap:10px;padding:4px 0;
     border-bottom:1px dashed var(--line);font-size:13.5px;font-weight:700}
   .rc b{font-variant-numeric:tabular-nums;white-space:nowrap}
+  details.grp summary{cursor:pointer;list-style:none}
+  details.grp summary::before{content:'▸ '}
+  details.grp[open] summary::before{content:'▾ '}
+  details.grp .gl{font-size:12.5px;padding:3px 0 3px 14px;border-top:1px dashed var(--line)}
+  details.grp .gl i{font-style:normal;color:var(--dim);font-weight:800;margin-right:7px}
+  .rc.rcsep{border-bottom:2px solid var(--line);font-size:11.5px;font-weight:700;padding-top:7px}
   .rrisk{border:2px solid var(--rust);background:var(--rust-l);padding:8px 12px;
     font-size:13.5px;font-weight:700;margin:0 0 12px}
   .rrisk b{font-family:var(--px);font-size:12px;margin-right:4px}

@@ -401,10 +401,13 @@ function settleImpacts(s, W, R, before) {
       out.push([dt >= 0 ? '+' : '−', `판매량 ${dt >= 0 ? '+' : '−'}${fmt(Math.abs(dt))}t`]);
       out.push([dt >= 0 ? '=' : '=', `가동률 ${dt >= 0 ? '+' : '−'}${(Math.abs(R.util * (1 - 1 / im.vol)) * 100).toFixed(1)}%p`]);
     }
+    /* x가 양수면 깎아준 것(할인), 음수면 올려 받은 것(프리미엄).
+       부호를 그대로 붙이면 인상 성공 뒤에 "단가 −$-4/t · 월 이익 −$-24k"가 나온다. */
     if (im.cut) {
       const [k, x] = im.cut, sh = s.custShare[k] || 0;
-      out.push(['−', `${CUST[k]} 단가 −$${x}/t`]);
-      out.push(['−', `월 이익 −$${fmt(x * T * sh / 1000)}k`]);
+      const sign = x > 0 ? '−' : '+';
+      out.push([sign, `${CUST[k]} 단가 ${x > 0 ? '인하' : '인상'} ${sign}$${Math.abs(x)}/t`]);
+      out.push([sign, `월 이익 ${sign}$${fmt(Math.abs(x * T * sh) / 1000)}k`]);
     }
     if (im.order && im.order !== 1) out.push([im.order > 1 ? '=' : '+', `소재 발주 ×${im.order}`]);
     if (im.cash) out.push([im.cash > 0 ? '+' : '−', `현금 ${im.cash > 0 ? '+' : '−'}$${fmt(Math.abs(im.cash) / 1000)}k`]);
@@ -676,7 +679,7 @@ const PROJECTS = {
     name: '신규 고객 개척', who: 'jung', months: 6,
     budget: 180_000,
     cost: '예산 $180k · 영업이 여섯 달 붙습니다',
-    aim: '우리 시장 점유율 +9%',
+    aim: '우리 시장 점유율 9% 증가 (상대)',
     /* 왜 지금인가 — 상태에서 점수를 매긴다. 높을수록 지금 할 만한 일이다. */
     fit: (s, W) => {
       const top = Math.max(...Object.keys(CUST).map(k => s.custShare[k] || 0));
@@ -713,7 +716,7 @@ const PROJECTS = {
     fit: (s, W) => (W.quality < 72 ? 2 : 0) + (W.stats.claims > 0 ? 1 : 0)
            + (W.stats.shortages > 0 ? 1 : 0) + (W.equip < 60 ? 1 : 0),
     why: (s, W) => W.quality < 72
-      ? `양품률이 ${qualityPct(W.quality)}%입니다. 이 수치로는 단가 협상에서 우리가 할 말이 없습니다.`
+      ? `양품률이 ${qualityPct(W.quality).toFixed(1)}%입니다. 이 수치로는 단가 협상에서 우리가 할 말이 없습니다.`
       : `지금은 괜찮습니다. 괜찮을 때 올려놔야 나중에 협상 자료가 됩니다.`,
     base: (s, W) => W.quality,
     now: (s, W) => W.quality,
@@ -811,7 +814,10 @@ function startProject(s, W, G, key) {
     base, goal: p.goal(base), lower: !!p.lower, progress: 0,
   };
   p.start(s, W, G);
-  remember(W, s, 'project', `집중 프로젝트 · ${p.name}`);
+  /* 태그를 'project'로 두면 신차 프로젝트 수주(issues.js)와 섞인다.
+     그러면 품질 개선 프로젝트를 시작한 다음 달에 고장·클레임·과로 사건이 전부
+     그 프로젝트를 원인으로 지목한다. 실제 발동 조건과 아무 상관이 없는데도. */
+  remember(W, s, 'focus', `집중 프로젝트 · ${p.name}`);
   return W.project;
 }
 
@@ -841,6 +847,10 @@ function projectTick(s, W, R, G) {
   W.projCapHit = 1;
   W.projectLog = W.projectLog || [];
   W.projectLog.push({ key: pr.key, name: p.name, start: pr.start, end: pr.end, pct, grade });
+  /* 끝난 프로젝트는 "아직 안 온 청구서"에서 지운다. 결과가 이미 나왔는데
+     미결 목록에 계속 남아 있으면 그건 예고가 아니라 잔해다. */
+  for (const m of W.mem || [])
+    if (m.tag === 'risk' && m.turn >= pr.start && /집중 프로젝트/.test(m.label || '')) m.risk = null;
   fire(W, s, 'project',
     `집중 프로젝트 「${p.name}」 ${grade === 'win' ? '목표 달성' : grade === 'half' ? '부분 달성' : '미달'} — `
     + `${p.aim} 대비 ${Math.round(pct * 100)}%. ${msg}`,
@@ -869,11 +879,26 @@ function milestone(W, s, key, title, who, msg, next) {
 
 function checkMilestones(s, W, R) {
   const h = s.history;
-  /* 금액을 적지 않는다. 이 함수는 달 단위로 도는데 속성 모드 결산은 분기 합계를 띄운다 —
-     "첫 흑자 $78k" 바로 위에 "이번 분기 $195k"가 있으면 둘 중 뭐가 맞는지 알 수가 없다. */
+  W.miles = W.miles || [];
+  /* 이 함수는 달 단위로 돈다. 속성 모드 결산은 분기 합계를 띄우므로,
+     금액을 적을 때 반드시 "몇 월 한 달치"라고 못 박는다 —
+     "첫 흑자 $79k" 바로 위에 "이번 분기 $231k"가 있으면 둘 중 뭐가 맞는지 알 수가 없다.
+     그리고 한 달에 첫 흑자와 누계 흑자가 같이 오면 한 장으로 묶는다.
+     "다음은 누계를 흑자로" 바로 아래에 누계 흑자 달성이 붙으면 말이 안 된다. */
+  if (R.op > 0 && s.cum.op > 0
+      && !W.miles.some(m => m.key === 'first-op' || m.key === 'cum-op')) {
+    milestone(W, s, 'first-op', '첫 흑자 · 누계 흑자 전환', 'han',
+      `${dateLabel(s.turn)} 한 달 영업이익 ${money(R.op)}, 부임 이후 누계 ${money(s.cum.op)}. `
+      + '한 달 흑자와 누계 흑자가 같은 달에 왔습니다. 이 회사에서 부호가 바뀌는 건 처음입니다.',
+      '여기서부터는 지키는 싸움입니다.');
+    // 목록에는 두 건으로 남기되 다시 축하하지는 않는다
+    W.miles.push({ key: 'cum-op', turn: s.turn, date: dateLabel(s.turn),
+      title: '누계 영업이익 흑자 전환' });
+  }
   if (R.op > 0) milestone(W, s, 'first-op', '첫 흑자', 'han',
-    '영업이익이 플러스로 찍혔습니다. 작은 숫자인데, 부호가 바뀐 겁니다. 이 회사에서 부호가 바뀌는 건 처음입니다.',
-    '다음은 누계를 흑자로 돌리는 겁니다.');
+    `${dateLabel(s.turn)} 한 달 영업이익 ${money(R.op)}. 작은 숫자인데 부호가 바뀐 겁니다. `
+    + '이 회사에서 부호가 바뀌는 건 처음입니다.',
+    s.cum.op > 0 ? '누계도 이미 흑자입니다. 이제 지키는 싸움입니다.' : '다음은 누계를 흑자로 돌리는 겁니다.');
   if (s.cum.op > 0) milestone(W, s, 'cum-op', '누계 영업이익 흑자 전환', 'han',
     `부임 이후 합계가 ${money(s.cum.op)}입니다. 그동안 판 게 이제 남기 시작했습니다.`,
     '여기서부터는 지키는 싸움입니다.');
@@ -893,7 +918,7 @@ function checkMilestones(s, W, R) {
       '단가 협상에서 이 기록을 쓰십시오.');
 
   if (W.quality >= 88) milestone(W, s, 'qual-high', '품질 우수 수준 진입', 'oh',
-    `양품률 ${qualityPct(W.quality)}%. 고객사 감사에서 지적 나올 일이 거의 없습니다.`,
+    `양품률 ${qualityPct(W.quality).toFixed(1)}%. 고객사 감사에서 지적 나올 일이 거의 없습니다.`,
     '협상에서 「품질로 설득」이 잘 먹힙니다.');
 
   if (W.solar) milestone(W, s, 'solar', '태양광 가동', 'seo',
