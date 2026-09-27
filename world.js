@@ -867,8 +867,10 @@ function milestone(W, s, key, title, who, msg, next) {
 
 function checkMilestones(s, W, R) {
   const h = s.history;
+  /* 금액을 적지 않는다. 이 함수는 달 단위로 도는데 속성 모드 결산은 분기 합계를 띄운다 —
+     "첫 흑자 $78k" 바로 위에 "이번 분기 $195k"가 있으면 둘 중 뭐가 맞는지 알 수가 없다. */
   if (R.op > 0) milestone(W, s, 'first-op', '첫 흑자', 'han',
-    `${money(R.op)}. 작은 숫자인데, 부호가 바뀐 겁니다. 이 회사에서 부호가 바뀌는 건 처음입니다.`,
+    '영업이익이 플러스로 찍혔습니다. 작은 숫자인데, 부호가 바뀐 겁니다. 이 회사에서 부호가 바뀌는 건 처음입니다.',
     '다음은 누계를 흑자로 돌리는 겁니다.');
   if (s.cum.op > 0) milestone(W, s, 'cum-op', '누계 영업이익 흑자 전환', 'han',
     `부임 이후 합계가 ${money(s.cum.op)}입니다. 그동안 판 게 이제 남기 시작했습니다.`,

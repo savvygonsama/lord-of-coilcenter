@@ -60,11 +60,20 @@ function worldIssues(s, W, G) {
      여기를 큰 고객으로만 좁히면 작은 고객군은 단가를 영영 못 고친다. */
   const negoKs = Object.keys(CUST).filter(k =>
     (s.custShare[k] || 0) > 0.03 || ((s.salesMix || {})[k] || 0) > 0);
-  for (const k of negoKs)
-    // 재입장 금지 기간은 그 고객의 협상 주기보다 짧아야 한다. 분기 고객에 넉 달을 걸면
-    // 분기 협상이 반기 협상으로 둔갑한다.
-    if (negoDue(k, month, G.mpt || 1) && since('w-nego-' + k) >= (NEGO_CYCLE[k] === '분기' ? 3 : 5))
-      add(negoCard(s, W, k, L), 74, true);
+  /* 재입장 금지 기간은 그 고객의 협상 주기보다 짧아야 한다. 분기 고객에 넉 달을 걸면
+     분기 협상이 반기 협상으로 둔갑한다. */
+  const due = negoKs.filter(k =>
+    negoDue(k, month, G.mpt || 1)
+    && since('w-nego-' + k) >= (NEGO_CYCLE[k] === '분기' ? 3 : (G.mpt || 1) > 1 ? 9 : 5));
+  /* 속성 모드는 한 결재가 석 달을 덮는다. 그러면 그 석 달에 걸린 협상이 전부 한 자리에 몰려
+     매 분기 단가 협상만 세 건이 올라온다 — 주기를 나눠 놓은 의미가 없어진다.
+     한 결재에 두 건까지만 올리고, 밀린 건은 다음 결재로 넘긴다. 반기 안에는 어차피 다 온다.
+     급한 순서 — 약속해 둔 곳, 경쟁사 견적이 진짜인 곳, 그다음 오래 안 만난 곳. */
+  const urgency = k => ((W.pledge || {})[k] ? 100 : 0) + (W.threat[k] ? 50 : 0)
+    + Math.min(40, s.turn - (G.seen['w-nego-' + k] ?? -40));
+  due.sort((a, b) => urgency(b) - urgency(a));
+  const negoCap = (G.mpt || 1) > 1 ? 2 : 1;
+  for (const k of due.slice(0, negoCap)) add(negoCard(s, W, k, L), 74, true);
   /* 유통향 스팟 — 눌러보기 전에는 결과를 모른다. 이 게임에서 유일하게 즉시 판가름 나는 판이다. */
   if (s.turn > 3 && since('m-spot') > 5 && wChance(0.38)) add(spotBetCard(s, W, L), 56);
   const volK = shares.filter(k => W.rel[k] >= 60).sort(() => Math.random() - 0.5)[0];
@@ -248,13 +257,14 @@ function hqAnnualCard(s, W, L) {
         `못 하겠다고 먼저 말하는 순간 본사는 다른 법인을 봅니다. 올해 테마는 「${YEAR_THEME[y].name}」입니다.`,
     opts: [
       { label: '요구대로 받는다', hint: '본사가 제일 좋아하는 답',
-        fx: ['+본사 신뢰 4', `=목표 ${fmt(ask)}t`, '?못 채우면 연말에 크게 깎인다'],
+        // 목표가 높아지는 건 부담(▼), 낮아지는 건 이득(▲). 기호와 의미가 맞아야 한다.
+        fx: ['+본사 신뢰 4', `−연간 목표 ${fmt(ask)}t (제일 높음)`, '?못 채우면 연말에 크게 깎인다'],
         apply: set('full', ask, 4, '그대로 받았습니다. 본사 영업본부장이 "역시" 하더군요. 이제 채우는 건 제 일입니다.', 'hq') },
       { label: '절충안을 낸다', hint: '요구의 90%',
-        fx: [`=목표 ${fmt(ask * 0.9)}t`, '=본사 신뢰 변화 없음'],
+        fx: [`=연간 목표 ${fmt(ask * 0.9)}t`, '=본사 신뢰 변화 없음'],
         apply: set('mid', Math.round(ask * 0.9), 0, '90%에서 잘랐습니다. 서로 반쯤 불만인 걸 보니 적당한 선입니다.', null) },
       { label: '우리 사정을 설명하고 낮춘다', hint: '현실적인 숫자',
-        fx: [`+목표 ${fmt(ask * 0.8)}t (달성 쉬움)`, '−본사 신뢰 5'],
+        fx: [`+연간 목표 ${fmt(ask * 0.8)}t (제일 낮음 · 달성 쉬움)`, '−본사 신뢰 5'],
         apply: set('low', Math.round(ask * 0.8), -5, '80%로 낮췄습니다. 본사 영업본부장이 한참 말이 없더니 "알겠습니다" 한마디 하고 끊었습니다. 그 한마디가 오래 갈 겁니다.', 'cash') },
     ],
   };
@@ -437,8 +447,17 @@ function overCard(s, W, cov) {
 const NEGO_SLOT = { HOME: [0, 3, 6, 9], EU: [1, 7], CN: [2, 8], JP: [4, 10], PART: [5, 11] };
 const NEGO_CYCLE = { HOME: '분기', EU: '반기', CN: '반기', JP: '반기', PART: '반기' };
 
+/* 속성 모드 전용 일정.
+   월 단위 일정을 그대로 쓰면 한 분기(석 달)에 협상이 세 건씩 몰린다. 반기 고객 넷이
+   연 2회면 8회, 분기 고객 하나가 4회 — 합쳐 연 12회인데 결재는 네 번뿐이기 때문이다.
+   그래서 속성 모드에서는 반기 고객을 연 1회로 바꾸고 분기마다 한 곳씩 배정한다.
+   그러면 매 분기 「분기 고객 H사 + 반기 고객 한 곳」으로 정확히 두 건이 된다.
+   분기 협상 고객이 캡에 밀려 1년에 한 번도 못 오는 일이 없어진다. */
+const NEGO_SLOT_Q = { HOME: [0, 3, 6, 9], EU: [0], JP: [3], CN: [6], PART: [9] };
+
 /* 이번 결재가 덮는 기간(노멀 1개월, 속성 3개월) 안에 그 고객의 협상 달이 들어 있는가 */
 function negoDue(k, month, mpt) {
+  if (mpt > 1) return (NEGO_SLOT_Q[k] || []).includes(month);
   const slots = NEGO_SLOT[k] || [];
   for (let i = 0; i < mpt; i++) if (slots.includes((month + i) % 12)) return true;
   return false;
@@ -469,7 +488,8 @@ function negoIntel(s, W, k) {
 
 function negoCard(s, W, k, L) {
   const c = CFG.CUSTOMERS[k], I = negoIntel(s, W, k);
-  const cycle = NEGO_CYCLE[k];
+  // 속성 모드에서는 반기 고객이 연 1회로 바뀐다. 화면에 적는 주기도 그에 맞춘다.
+  const cycle = NEGO_CYCLE[k] === '분기' ? '분기' : ((G && G.mpt) > 1 ? '연간' : '반기');
   /* 이탈 위기 때 "다음 협상에서 열어드리겠습니다"라고 해놨으면, 그 청구서가 여기서 돌아온다.
      단가가 협상 자리 밖에서 움직이지 않게 하려고 만든 장치다 —
      다른 카드는 약속만 할 수 있고, 값은 언제나 이 자리에서 치른다. */
@@ -611,8 +631,18 @@ function negoCard(s, W, k, L) {
           { vol: v, rel: [[k, -8]] })(st, G);
       }
       W.rel[k] = wClamp(W.rel[k] - 2);
+      /* 같은 "동결 성공"이라도 고객군마다 그 자리 분위기가 다르다.
+         세 고객과 연달아 협상했는데 결과 문구가 똑같으면 협상이 아니라 버튼 누르기가 된다. */
+      const HOLD_OK = {
+        JP: '동결했습니다. 그쪽은 원래 단가로 거래처를 바꾸는 회사가 아닙니다. 서류만 다시 쓰고 끝났습니다.',
+        EU: '동결했습니다. 구매팀장이 본사 승인을 못 받았다더군요. 떠본 게 맞았습니다.',
+        CN: '동결했습니다. 놀랍게도 그냥 물러섰습니다. 이 회사가 이러는 건 처음 봅니다 — 다음엔 두 배로 올 겁니다.',
+        PART: '동결했습니다. 그쪽도 자기네 고객한테 눌리는 중이라 세게는 못 나옵니다.',
+        HOME: '동결했습니다. 분기마다 오는 자리라 그쪽도 힘을 아끼는 눈치입니다. 석 달 뒤에 또 옵니다.',
+      };
       return close(`${CUST[k]} 동결 — 버팀`, 'hold-ok',
-        `동결했습니다. 역시 떠보는 거였습니다. 마진 그대로 갑니다.`, { rel: [[k, -2]] })(st, G);
+        HOLD_OK[k] || '동결했습니다. 역시 떠보는 거였습니다. 마진 그대로 갑니다.',
+        { rel: [[k, -2]] })(st, G);
     },
   });
 
@@ -643,7 +673,7 @@ function negoCard(s, W, k, L) {
      약속을 해둔 자리에서는 통하지 않는다. 그쪽은 실적 얘기를 들으러 온 게 아니다. */
   if (I.quality >= 68 && !pledged) opts.push({
     label: '품질·납기 실적을 들고 동결을 설득한다',
-    hint: `우리 품질 ${qualityPct(W.quality)}점 · 관계 ${relLabel(W.rel[k])}`,
+    hint: `양품률 ${qualityPct(W.quality).toFixed(1)}% · 관계 ${relLabel(W.rel[k])}`,
     fx: ['+통하면 단가 유지 · 관계 ↑', '?못 받쳐주면 물량 일부 이탈'],
     apply: (st, G) => {
       const ok = W.quality >= 72 && W.rel[k] >= 55 && wChance(0.75);
@@ -674,7 +704,9 @@ function negoCard(s, W, k, L) {
     { kind: 'fact', label: '가공마진 대비', value: `톤당 $${CFG.PROC_MARGIN.SLIT + CFG.COIL_MARGIN} 중 ${nowCut} 양보 중`,
       note: `여기서 $${ask} 더 내주면 남는 게 톤당 $${Math.max(0, CFG.PROC_MARGIN.SLIT + CFG.COIL_MARGIN - nowCut - ask)}입니다`,
       warn: nowCut + ask >= CFG.PROC_MARGIN.SLIT },
-    { kind: 'fact', label: '관계 · 우리 품질', value: `${relLabel(I.rel)} · ${qualityPct(W.quality)}점` },
+    // 품질은 화면마다 단위가 달라지면 안 된다. 현장 말로는 언제나 「양품률 %」,
+    // 프로젝트 목표로 쓰는 내부 지수만 「품질 지수 점」이라고 따로 부른다.
+    { kind: 'fact', label: '관계 · 우리 양품률', value: `${relLabel(I.rel)} · ${qualityPct(W.quality).toFixed(1)}%` },
     { kind: 'fact', label: '지난달 납기 달성', value: `${Math.round(fulfil * 100)}%`, warn: fulfil < 0.95 },
     I.threat
       ? { kind: 'fact', label: '경쟁사 견적', value: '실물 확인됨', warn: true,
@@ -800,8 +832,9 @@ function projectPickCard(s, W) {
     { kind: 'fact', label: '지금 제일 급한 것', value: PROJECTS[opts[0].key].name,
       note: opts[0].why },
     { kind: 'fact', label: '자금 여력', value: `${runway(s).toFixed(1)}개월치`, warn: runway(s) < 2 },
-    { kind: 'fact', label: '재고율 · 품질 · 점유율',
-      value: `${coverOf(s).toFixed(1)}개월 · ${qualityPct(W.quality)}% · ${(s.myShare * 100).toFixed(1)}%` },
+    { kind: 'fact', label: '재고율 · 품질 지수 · 점유율',
+      value: `${coverOf(s).toFixed(1)}개월 · ${Math.round(W.quality)}점 · ${(s.myShare * 100).toFixed(1)}%`,
+      note: `품질 지수는 프로젝트 목표에 쓰는 내부 값입니다. 현장 양품률로는 ${qualityPct(W.quality).toFixed(1)}%입니다` },
     done ? { kind: 'fact', label: '지난 프로젝트',
       value: (W.projectLog.slice(-1)[0].grade === 'win' ? '목표 달성' : W.projectLog.slice(-1)[0].grade === 'half' ? '부분 달성' : '미달')
         + ` (${W.projectLog.slice(-1)[0].name})` } : null,
@@ -988,13 +1021,13 @@ function maintCard(s, W) {
           remember(W, s, 'maint', '전면 정비');
           lever(G, '전면 정비', { cash: -26_000, equip: 32, quality: 1, risk: '이번 달 매출 감소' });
           return '일주일 세아놓고 전부 뜯었심더. 기름 묻은 손으로 "인자 됐습니더" 한마디 하고 나가데예. 당분간은 이 얘기 안 할 겁니더.'; } },
-      { label: '주말에 부분 정비', hint: '급한 것만 — 석 달 뒤 다시 본다',
+      { label: '주말에 부분 정비', hint: '급한 것만 — 넉 달 뒤 다시 본다',
         fx: ['−통장 $25,000', '=캐파 손실 거의 없음', '+설비 조금 회복'],
         apply: (s, G) => { s.cash -= 25_000; W.equip = wClamp(W.equip + 12); W.maintAge = Math.max(0, W.maintAge - 6);
-          W.maintCool = s.turn + 3; W.fatigue = wClamp(W.fatigue + 4); styleAdd(W, 'craft');
+          W.maintCool = s.turn + 4; W.fatigue = wClamp(W.fatigue + 4); styleAdd(W, 'craft');
           remember(W, s, 'maint-part', '부분 정비');
-          lever(G, '주말 부분 정비', { cash: -25_000, equip: 12, risk: '근본은 안 고쳤다 — 석 달 뒤 다시' });
-          return '주말에 특근 걸어가 급한 것만 손봤심더. 근본은 안 고쳤습니다. 석 달쯤 뒤에 다시 말씀드리겠심더.'; } },
+          lever(G, '주말 부분 정비', { cash: -25_000, equip: 12, risk: '근본은 안 고쳤다 — 넉 달 뒤 다시' });
+          return '주말에 특근 걸어가 급한 것만 손봤심더. 근본은 안 고쳤습니다. 넉 달쯤 뒤에 다시 말씀드리겠심더.'; } },
       { label: '미룬다', hint: '지금은 물량이 먼저 — 두 달 뒤 다시 온다',
         fx: ['+이번 달 캐파 그대로', '?고장 위험 누적', '?품질 저하'],
         apply: (s, G) => { W.deferMaint++; W.maintCool = s.turn + 2; W.stats.deferrals++; styleAdd(W, 'grow');

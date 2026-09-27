@@ -168,8 +168,10 @@ function dealTurn() {
      속성은 한 번 결재로 석 달을 돌리니 그 석 달치 안건이 같이 올라와야 한다.
      매달 결재와 같은 수만 올리면 분기 모드는 결정 횟수가 3분의 1로 줄어든다.
      그건 빠른 게 아니라 게임을 덜 하는 것이다. */
-  const cap = G.mpt > 1 ? 7 : 4;
-  const soft = G.mpt > 1 ? 5 : 3;
+  /* 속성 모드는 한 결재가 석 달치라 안건이 많아야 맞지만, 매 분기 여덟 건이 꽉 차면
+     결재가 판단이 아니라 노동이 된다. 여섯 건 + 발주로 줄인다. */
+  const cap = G.mpt > 1 ? 6 : 4;
+  const soft = G.mpt > 1 ? 4 : 3;
   const cand = worldIssues(s, W, G).sort((a, b) => (b.force - a.force) || (b.prio - a.prio));
   for (const c of cand) {
     if (G.queue.length >= cap) break;
@@ -568,10 +570,14 @@ function ctxStrip(items) {
    두 화면이 다른 숫자를 보여주면 그것부터가 신뢰를 깎는다. */
 function keyMetrics(s, W) {
   const n = stockNow(s);
-  const h = s.history;
+  /* 전임 사장이 돌린 열여섯 달(prelude)도 이 회사의 실적이다.
+     그걸 빼면 부임 첫 화면이 "지난 분기 $0 · 비교할 직전 기간 없음"으로 뜬다 —
+     방금 작년 실적 브리핑을 듣고 온 사장에게 회사가 오늘 생긴 것처럼 보인다. */
+  const h = (s.prelude || []).concat(s.history);
   const mpt = (G && G.mpt) || 1;
-  const recent = h.slice(-mpt);
-  const prev = h.slice(-mpt * 2, -mpt);
+  const recent = s.history.length ? s.history.slice(-mpt) : h.slice(-mpt);
+  const prev = s.history.length ? h.slice(-(mpt + s.history.length), -s.history.length).slice(-mpt)
+                                : h.slice(-mpt * 2, -mpt);
   const sum = (a, k) => a.reduce((x, r) => x + (r[k] || 0), 0);
   const op = recent.length ? sum(recent, 'op') : 0;
   const opPrev = prev.length ? sum(prev, 'op') : null;
@@ -616,7 +622,7 @@ function cardCtx(s) {
   return { load, tight: load > 0.97, idle: load < 0.55, pmTrend };
 }
 
-const DECK_LABEL = { mat: '자재', hr: '인사', ga: '총무', buy: '소재 발주', cust: '영업 · 반기 계획', price: '영업 · 단가 협상', spot: '영업 · 유통 스팟', vol: '영업 · 수주', sales: '영업', prod: '생산', people: '조직', quality: '품질', cash: '재무', credit: '재무', hq: '본사', legacy: '정상화', solar: '설비 투자', order: '소재 발주', op: '운영', life: '사내', big: '주요 사건' };
+const DECK_LABEL = { mat: '자재', hr: '인사', ga: '총무', buy: '소재 발주', cust: '영업 · 반기 계획', price: '영업 · 단가 협상', spot: '영업 · 유통 스팟', vol: '영업 · 수주', sales: '영업', prod: '생산', people: '조직', quality: '품질', cash: '재무', credit: '재무', hq: '본사', legacy: '정상화', solar: '설비 투자', order: '소재 발주', proj: '경영 프로젝트', op: '운영', life: '사내', big: '주요 사건' };
 /* 단가 협상은 고객군마다 다른 주제(price-JP …)라 접미사를 떼고 찾는다.
    같은 달에 여러 고객과 협상할 수 있어야 해서 주제를 나눠 놓은 결과다. */
 function deckLabel(deck) {
@@ -680,9 +686,13 @@ function salesPlanCard(s, W) {
       lever(g, '반기 영업 자원 배분', {
         risk: off.length ? `${off.map(k => CUST[k]).join('·')}는 무관리 — 매달 물량이 조금씩 빠집니다` : null,
       });
-      const top = on.sort((a, b) => mix[b] - mix[a])[0];
+      const sorted = on.slice().sort((a, b) => mix[b] - mix[a]);
+      const top = sorted[0];
+      // 동률인데 "제일 세게"라고 하면 그 자리에서 거짓말이 된다
+      const tied = sorted.filter(k => mix[k] === mix[top]);
       return `${on.map(k => `${CFG.CUSTOMERS[k].name} ${mix[k]}`).join(', ')}으로 짰습니다. `
-           + `${top ? `${CFG.CUSTOMERS[top].name}에 제일 세게 붙입니다. ` : ''}`
+           + `${tied.length > 1 ? `${tied.map(k => CFG.CUSTOMERS[k].name).join('과 ')}에 같은 무게로 붙입니다. `
+                : top ? `${CFG.CUSTOMERS[top].name}에 제일 세게 붙입니다. ` : ''}`
            + `${off.length ? `${off.map(k => CFG.CUSTOMERS[k].name).join('·')}는 사실상 손 놓는 겁니다. 나중에 딴말 없기입니다. ` : '다섯 군데 다 챙기는 건 다섯 군데 다 대충 하는 거랑 비슷합니다만, 사장님 뜻대로 하겠습니다. '}`
            + `숫자는 ${when}부터 움직입니다.`;
     },
@@ -1214,7 +1224,18 @@ function goalPanel(s, W) {
   const yr = Math.floor((s.turn - 1) / 12) + 1;
   const need = W.hq.target > 0 ? Math.max(0, W.hq.target - W.hq.ytd) : 0;
   const leftM = 12 - m;
+  /* 부임 첫 달의 긴급 상황은 경보 로직이 아니라 인수인계에서 나온다.
+     방금 브리핑에서 "정비 미뤘고, 묵은 재고가 있고, 단가가 깎여 있다"고 세 가지를 짚었는데
+     바로 아래에 "지금 급한 건 없습니다"가 뜨면 그 자체가 모순이다. */
   const w = warnings(s, W).slice(0, 2);
+  if (!s.history.length) {
+    const legacy = legacyTons(s);
+    const cut = standingCut(s, W);
+    if (W.maintAge >= 6) w.unshift(['인수', `전임 사장이 정비를 미뤘습니다. 마지막 정비 후 ${W.maintAge}개월째입니다.`]);
+    if (legacy > 0) w.unshift(['인수', `창고에 규격이 애매한 일반재 ${fmt(legacy)}톤이 묵어 있습니다. 매달 이자가 나갑니다.`]);
+    if (cut > 0.5) w.unshift(['인수', `고객 단가가 평균 톤당 $${cut.toFixed(1)} 깎여 있습니다. 영업이익이 안 남는 이유가 대부분 여기 있습니다.`]);
+    w.length = Math.min(w.length, 3);
+  }
   return `<div class="card goal">
     <h2>${yr}년차 ${periodNow().replace(/^\d+년 /, '')} — 이번에 할 일</h2>
     <div class="goalrow">
@@ -1225,7 +1246,7 @@ function goalPanel(s, W) {
           k.pace != null ? ` · 페이스 ${Math.round(k.pace * 100)}%` : ''}</span>
       </div>` : ''}
       <div class="gbox">
-        <span class="gl">누계 영업이익</span>
+        <span class="gl">부임 이후 누계 영업이익</span>
         <span class="gv ${k.cumOp < 0 ? 'bad' : 'good'}">${money(k.cumOp)}</span>
         <span class="gn">적자로 끝나면 경영 평가는 낙제입니다</span>
       </div>
@@ -1975,7 +1996,7 @@ function advance() {
   const months = G.mpt || 1;
   const reports = [];
   G.W.fired = [];
-  G.W.newMiles = [];          // 이번 기간에 새로 딴 이정표만 결산에서 축하한다
+  G.W.newMiles = G.W.newMiles || [];   // 못 보여준 이정표는 다음 결산으로 넘긴다
 
   for (let i = 0; i < months; i++) {
     const s = G.s, fired = [];
@@ -2081,7 +2102,9 @@ function showReport(R) {
   // 직전 기간 대비
   const mpt = R.months || 1;
   const hist = G.s.history;
-  const prev = hist.slice(-mpt * 2, -mpt);
+  // 전임 사장이 돌린 기간도 비교 대상이다. 부임 첫 결산이 "비교할 직전 기간 없음"이면 안 된다.
+  const full = (G.s.prelude || []).concat(hist);
+  const prev = full.length > mpt ? full.slice(-mpt * 2, -mpt) : [];
   const sum = (a, k) => a.reduce((x, r) => x + (r[k] || 0), 0);
   const dOp = prev.length ? R.op - sum(prev, 'op') : null;
   const causes = reportCauses(R);
@@ -2114,7 +2137,9 @@ function showReport(R) {
         <b class="${c.amt < 0 ? 'v neg' : 'v pos'}">${c.amt < 0 ? '▼ −$' : '▲ +$'}${money1k(Math.abs(c.amt))}</b></div>`).join('')}
       </div>` : ''}
 
-    ${milesBlock(G.W.newMiles)}
+    ${/* 한 결산에 이정표를 셋씩 터뜨리면 축하가 아니라 소음이 된다.
+          한 건만 보여주고 나머지는 다음 결산으로 미룬다 — 어차피 목록에는 다 남는다. */
+      milesBlock((G.W.newMiles || []).splice(0, 1))}
 
     <div class="rrisk"><b>다음 ${R.months > 1 ? '분기' : '달'} 위험</b> — ${risk}</div>
 
