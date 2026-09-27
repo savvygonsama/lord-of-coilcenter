@@ -814,7 +814,11 @@ function orderRows(s, L) {
     /* 권장량 = 이번 기간에 쓸 양 + (목표 재원 − 지금 재원) ÷ 조정 기간.
        뒤의 항을 나누지 않으면 재원이 한 번 넘칠 때 권장량이 0 가까이 무너지고,
        그 구멍이 두 달 뒤에 결품으로 돌아온다. */
-    const gap = (useM * aim - res) / STOCK_ADJ_PERIODS();
+    /* 재고 조정은 한 번에 소요량의 ±35%까지만. 발주를 한 분기에 60%씩 흔들면
+       공급망이 채찍처럼 출렁인다 — 이번에 덜 샀다가 다음에 몰아 사고, 그게 또 반복된다.
+       모자란 조정은 다음 결재에서 마저 한다. */
+    const rawGap = (useM * aim - res) / STOCK_ADJ_PERIODS();
+    const gap = Math.max(-use * 0.35, Math.min(use * 0.35, rawGap));
     const base = Math.max(0, use + gap) * cardMult;
     const capped = Math.min(MAX, Math.max(0, ceiling - res), base, yardRoom);
     // 천장이나 재원 때문에 0이 되는 건 막는다. 자리가 없을 때만(yardRoom) 정말 0이 된다.
@@ -879,6 +883,18 @@ function orderCard(s, W, L) {
   const mo = orderMonths();
   /* 소재값 소문은 결재 안건이 아니라 정보다. 따로 카드로 물으면 같은 결정을 두 번 시키는 셈이라,
      여기 발주 표 위에 한 줄로 붙여두고 톤수는 사장이 정하게 한다. */
+  /* 소요량이 지난 결재보다 크게 달라졌으면 그 사실을 먼저 말한다.
+     권장량이 갑자기 반으로 줄면 플레이어는 계산 오류를 의심한다 —
+     실제로는 내시가 줄어든 것이고, 그때 발주를 안 줄이면 창고가 터진다. */
+  const prevNeed = (W.needHist || []).slice(-(mo + 1))[0];
+  const nowNeed = planNeed(s, L, W);
+  const dNeed = prevNeed > 0 ? nowNeed / prevNeed - 1 : 0;
+  const needNote = Math.abs(dNeed) < 0.12 ? ''
+    : dNeed < 0
+      ? `먼저 말씀드릴 게 있습니다. 내시가 ${mo > 1 ? '지난 분기' : '지난달'}보다 ${Math.round(-dNeed * 100)}% 줄었습니다. `
+        + `${s.market.phase === 'BUST' ? '고객사들이 감산에 들어갔습니다. ' : ''}`
+        + `그래서 이번 권장량이 확 내려갑니다. 계산이 틀린 게 아니고, 이 상태로 예전만큼 걸면 창고가 터집니다. `
+      : `내시가 ${mo > 1 ? '지난 분기' : '지난달'}보다 ${Math.round(dNeed * 100)}% 늘었습니다. 권장량도 그만큼 올라갑니다. `;
   const rumor = W.priceRumor === 1
       ? '아, 그리고 — 본사 영업팀 제 동기 얘긴데 다음 분기에 소재값 올린답니다. 확정은 아닙니다만, 그러면 지금 많이 걸어두는 게 남는 겁니다. '
     : W.priceRumor === -1
@@ -890,6 +906,7 @@ function orderCard(s, W, L) {
     text: `사장님, ${mo > 1 ? '이번 분기' : '이번 달'} 발주입니다. `
         + `지금 전체로 보면 재고율 ${sn.invM.toFixed(1)}개월, 재원율 ${sn.resM.toFixed(1)}개월이고요. `
         + `${mo > 1 ? `분기 결재니까 석 달치를 한 번에 겁니다. 적어주신 톤수를 세 달에 나눠서 집행합니다. ` : ''}`
+        + `${needNote}`
         + `${rumor}`
         + `고객군별로 쓰는 속도가 다릅니다. 한 줄씩 보고 정하시죠. `
         + `제가 계산한 권장량을 넣어뒀는데, 이건 내시가 그대로 간다는 전제입니다. `

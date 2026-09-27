@@ -546,6 +546,31 @@ function portfolio(state) {
   return out;
 }
 
+/* 이번 달 내시가 평소보다 얼마나 뜨고 가라앉는가.
+
+   예전에는 고객군 변동성을 하나로 뭉쳐(가중평균) 주사위를 한 번만 굴렸다.
+   그러면 중국 전기차의 큰 변동이 일본계·구미계 물량까지 똑같이 흔든다 — 실무와 다르다.
+   일본계는 내시를 반년 전에 확정해 놓고 거의 안 바꾸고, 중국 전기차는 모델 주기가 짧아
+   달마다 출렁인다. 서로 다른 회사가 서로 다른 이유로 움직이니 주사위도 따로 굴려야 한다.
+
+   고객군마다 따로 굴려 비중으로 더하면, 서로 반대로 움직인 달은 상쇄된다.
+   그래서 전체 변동은 "제일 요동치는 고객군의 변동 × 그 고객군 비중"에 가까워진다.
+   중국 전기차에 몰빵하면 회사 전체가 출렁이고, 일본계 위주면 잔잔하다.
+   포트폴리오를 어떻게 짰느냐가 물량 안정성으로 그대로 돌아온다. */
+function demandShock(state, rng) {
+  const sh = state.custShare || {};
+  let tot = 0;
+  for (const k in CFG.CUSTOMERS) tot += sh[k] || 0;
+  if (tot <= 0) return 0;
+  let shock = 0;
+  for (const k in CFG.CUSTOMERS) {
+    const w = (sh[k] || 0) / tot;
+    if (w <= 0) continue;
+    shock += w * CFG.CUSTOMERS[k].vol * gauss(rng);
+  }
+  return shock;
+}
+
 function makeNasi(state, turn, rng) {
   const p = CFG.PHASE[state.market.phase];
   const trustCoef = 0.5 + state.trust / 200;
@@ -555,10 +580,13 @@ function makeNasi(state, turn, rng) {
   // 블랭킹을 맡기는 고객이 많으면 블랭킹 수요가 커지고, 그만큼 슬리팅에서 빠진다
   const bshift = { SLIT: 1 - pf.blank * 0.5, LEVEL: 1 - pf.blank * 0.3,
                    C2C: 1, TRAP: 1 + pf.blank * 2.2, DIE: 1 + pf.blank * 2.2 };
+  /* 그 달의 수요 충격은 회사 전체에 하나다 — 같은 달 같은 시장이니까.
+     대신 그 값을 고객군별로 따로 굴려 만든다(demandShock). */
+  const shock = demandShock(state, rng);
   for (const k of PROC_LIST) {
     if (!procAvailable(state, k)) { tons[k] = 0; potential[k] = 0; continue; }
     const v = DEMAND_BASE[k] * CFG.PREMIUM_DEMAND_SHARE * p.mkt * pf.grow * bshift[k]
-            * (state.myShare / 0.10) * trustCoef * (1 + pf.vol * gauss(rng));
+            * (state.myShare / 0.10) * trustCoef * (1 + shock);
     potential[k] = Math.max(0, Math.round(v));          // 본사가 주고 싶어 하는 양
     tons[k] = Math.max(0, Math.round(Math.min(v, ceil[k])));  // 우리 캐파가 받을 수 있는 양
   }
