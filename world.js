@@ -244,6 +244,8 @@ function worldPost(s, W, R, G) {
   const u = R.util || 0;
   W.utilHist.push(u);
   W.coverHist.push(coverOf(s));
+  // 발주 계획을 안정시키려고 월 소요량의 최근 흐름을 기억해 둔다 (ui.js planNeed)
+  W.needHist = (W.needHist || []); W.needHist.push(look(s).need); if (W.needHist.length > 12) W.needHist.shift();
   for (const k in CUST) W.shareHist[k].push(s.custShare[k] || 0);
   W.capHit = 1;
 

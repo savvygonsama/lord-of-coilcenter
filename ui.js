@@ -738,14 +738,39 @@ function salesPlanCard(s, W) {
    그건 발주를 결정한 게 아니다. */
 function orderMonths() { return (G && G.mpt) || 1; }
 
+/* 발주 계획에 쓰는 월 소요량.
+   look(s).need는 지금 손에 든 석 달 내시로만 계산한다. 내시는 달마다 흔들리므로
+   그 값을 그대로 쓰면 분기마다 소요량이 15,000 → 9,300 → 7,400으로 튀고,
+   권장량도 같이 튀어 재고가 톱니처럼 오르내린다.
+   실무에서도 발주 계획은 "최근 실적 + 앞으로의 내시"를 섞어서 잡는다. 여기서도 그렇게 한다. */
+function planNeed(s, L, W) {
+  const h = (W && W.needHist) || [];
+  const recent = h.slice(-3);
+  if (!recent.length) return L.need;
+  const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+  return L.need * 0.5 + avg * 0.5;
+}
+
+/* 재원이 목표보다 많거나 적을 때 그 차이를 몇 기간에 걸쳐 되돌릴 것인가.
+   한 번에 다 되돌리면 — 초과분 22,000톤을 이번 분기 발주에서 통째로 빼면 —
+   권장량이 28,000에서 6,000으로 무너지고, 2개월 리드타임 때문에 그다음 분기에 구멍이 난다.
+   재고 조정은 나눠서 한다. */
+const STOCK_ADJ_PERIODS = () => (orderMonths() > 1 ? 2 : 3);
+
+/* 재원이 아무리 넘쳐도 이만큼은 건다.
+   소재는 걸고 두 달 뒤에 온다. 재원이 많다고 이번 달 발주를 0으로 만들면
+   그 구멍이 두 달 뒤 라인 앞에 그대로 나타난다. 창고 자리가 없을 때만 이 하한이 풀린다. */
+const ORDER_FLOOR_RATE = 0.4;
+
 function orderRows(s, L) {
   const onhand = inventoryTons(s), sea = seaTons(s), prod = prodTons(s);
   const lead = CFG.LEAD_TURNS + CFG.GRADE.PREMIUM.leadAdd;
   const cover = (G && G.ui && G.ui.cover) || 2.9;
   const mo = orderMonths();
+  const need = planNeed(s, L, G && G.W);
   return Object.keys(CUST).map(k => {
     const sh = s.custShare[k] || 0;
-    const use = L.need * sh * mo;                  // 이번 결재가 덮는 기간의 소재 소요량
+    const use = need * sh * mo;                    // 이번 결재가 덮는 기간의 소재 소요량
     const oh = onhand * sh, se = sea * sh, pr = prod * sh;
     const inv = oh + se, res = inv + pr;
     /* 본사 압연 스케줄에 밀어 넣을 수 있는 양은 한계가 있다.
@@ -781,12 +806,22 @@ function orderRows(s, L) {
        정상 상태에서는 "그 기간에 쓸 만큼"만 걸어야 재고가 제자리에 선다. 거기에
        지금 비어 있는 자리만큼만 더 채울 수 있다. 리드타임 동안 빠져나갈 양을 통째로
        더해주면(need × lead) 매달 그만큼 과발주가 되어 야드가 계속 넘친다 — 실제로 그랬다. */
+    /* 야드 여유를 볼 때 본사에서 생산 중인 것도 절반쯤은 계산에 넣는다.
+       그것도 결국 들어오기 때문이다. 창고와 배만 보면 "자리 있다"고 걸었다가
+       두 달 뒤 세 덩이가 한꺼번에 내려 야드가 넘친다. */
     const yardRoom = use + Math.max(0,
-      CFG.WAREHOUSE_CAP_BASE * 0.90 - onhand - sea) * sh;
-    const base = Math.max(0, use + useM * aim - res) * cardMult;
-    const rec = Math.min(MAX, Math.max(0, ceiling - res), base, yardRoom);
+      CFG.WAREHOUSE_CAP_BASE * 0.90 - onhand - sea - prod * 0.5) * sh;
+    /* 권장량 = 이번 기간에 쓸 양 + (목표 재원 − 지금 재원) ÷ 조정 기간.
+       뒤의 항을 나누지 않으면 재원이 한 번 넘칠 때 권장량이 0 가까이 무너지고,
+       그 구멍이 두 달 뒤에 결품으로 돌아온다. */
+    const gap = (useM * aim - res) / STOCK_ADJ_PERIODS();
+    const base = Math.max(0, use + gap) * cardMult;
+    const capped = Math.min(MAX, Math.max(0, ceiling - res), base, yardRoom);
+    // 천장이나 재원 때문에 0이 되는 건 막는다. 자리가 없을 때만(yardRoom) 정말 0이 된다.
+    const rec = Math.max(capped, Math.min(use * ORDER_FLOOR_RATE, yardRoom, MAX));
     // 권장량이 무엇에 막혔는지 화면에 적어준다 — 근거 없는 숫자를 그대로 믿게 하지 않는다
-    const capBy = rec >= base - 1 ? '소요·재원' : rec >= MAX - 1 ? '본사 압연 한도'
+    const capBy = rec > capped + 1 ? '최소 발주선'
+                : rec >= base - 1 ? '소요·재원' : rec >= MAX - 1 ? '본사 압연 한도'
                 : rec >= yardRoom - 1 ? '야드 여유' : '재원 천장';
     return { k, sh, use, oh, sea: se, prod: pr, inv, res, max: Math.round(MAX / 50) * 50,
       invM: useM > 0 ? inv / useM : 0, resM: useM > 0 ? res / useM : 0,

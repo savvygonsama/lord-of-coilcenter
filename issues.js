@@ -433,10 +433,12 @@ function overCard(s, W, cov) {
           return '묵은 것부터 깎아서 넘겼습니다. 장부는 아프고 통장은 숨을 쉽니다. 둘 중에 통장이 먼저 죽으면 장부는 볼 일도 없습니다.'; } },
       { label: '앞으로 석 달 발주를 확 줄인다', hint: '천천히 뺀다',
         fx: ['+현금 부담 ↓', '−발주 ×0.4', '?수요가 붙으면 결품'],
-        apply: (s, G) => { G.mult *= 0.4; W.policy = 'tight'; styleAdd(W, 'cash');
+        // 재고 목표를 영구히 바꾸지 않는다. 이 결재 한 번의 발주만 줄인다 —
+        // 방침을 묻는 카드를 없앴는데 다른 카드가 조용히 방침을 바꾸면 그게 앞뒤가 안 맞는 것이다.
+        apply: (s, G) => { G.mult *= 0.4; styleAdd(W, 'cash');
           remember(W, s, 'policy-tight', '발주 긴축');
           lever(G, '발주 긴축', { order: 0.4, risk: '석 달 뒤 결품 위험' });
-          return '발주를 줄이고 방침을 타이트로 바꿨습니다. 정 부장이 석 달 뒤에 제 자리로 찾아올 겁니다. 그때 뵙겠습니다.'; } },
+          return '이번 발주를 확 줄였습니다. 정 부장이 석 달 뒤에 제 자리로 찾아올 겁니다. 그때 뵙겠습니다.'; } },
       { label: '그대로 들고 간다', hint: '값이 오르면 이득',
         fx: ['=당장 변화 없음', '?값이 내리면 평가손', '−이자·보관비 계속'],
         apply: (s, G) => { styleAdd(W, 'grow'); remember(W, s, 'hold-stock', '재고 보유 결정');
@@ -990,7 +992,7 @@ function limitCard(s, W, use) {
         fx: ['+발주 ×0.7 · 재고 축소', '−석 달 뒤 결품 위험', '+이자 부담 ↓'],
         apply: (s, G) => {
           G.mult *= 0.7; G.ui.cover = Math.max(1.3, (G.ui.cover || 2.2) - 0.6);
-          W.policy = 'tight'; styleAdd(W, 'cash', 2);
+          styleAdd(W, 'cash', 2);
           remember(W, s, 'underbuy', '한도 압박에 발주 축소');
           lever(G, '운전자본 축소', { order: 0.7, risk: '석 달 뒤 결품 위험' });
           return `빌리는 대신 덜 쓰기로 했습니다. 정 부장 얼굴이 굳었습니다. "석 달 뒤에 저 부르지 마십시오."`; } },
